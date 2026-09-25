@@ -3,7 +3,7 @@ import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatDate, formatTime, isOverdue } from "@/lib/itemTypes";
 import { invalidateAll } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { Check, CalendarDays, User, FolderKanban, AlertCircle } from "lucide-react";
+import { Check, CalendarDays, User, FolderKanban, AlertCircle, Repeat } from "lucide-react";
 
 export default function ItemCard({ item, onOpen }) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
@@ -29,17 +29,24 @@ export default function ItemCard({ item, onOpen }) {
         item.completed && "opacity-55"
       )}
     >
-      <button
-        onClick={toggle}
-        className={cn(
-          "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border transition",
-          item.completed
-            ? "bg-brand border-brand text-brand-foreground"
-            : "border-border hover:border-brand"
-        )}
-      >
-        {item.completed && <Check className="h-3 w-3" />}
-      </button>
+      {item._recurringOccurrence ? (
+        // A generated repeat: completing it would complete the whole series.
+        <span title="Repeats" className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-dashed border-border text-muted-foreground">
+          <Repeat className="h-3 w-3" />
+        </span>
+      ) : (
+        <button
+          onClick={toggle}
+          className={cn(
+            "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border transition",
+            item.completed
+              ? "bg-brand border-brand text-brand-foreground"
+              : "border-border hover:border-brand"
+          )}
+        >
+          {item.completed && <Check className="h-3 w-3" />}
+        </button>
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
