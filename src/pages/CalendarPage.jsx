@@ -1,17 +1,12 @@
 import React from "react";
 import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
 import { useItems } from "@/lib/queries";
-import { ITEM_TYPE_MAP, formatTime } from "@/lib/itemTypes";
+import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { expandRecurring } from "@/lib/recurring";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import { cn } from "@/lib/utils";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function dayKey(iso) {
-  if (!iso) return null;
-  return new Date(iso).toISOString().slice(0, 10);
-}
 
 export default function CalendarPage() {
   const { data: items } = useItems({});
@@ -27,7 +22,7 @@ export default function CalendarPage() {
   const month = cursor.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = toDayKey(new Date());
 
   const rangeStart = new Date(year, month, 1);
   const rangeEnd = new Date(year, month, daysInMonth);
@@ -36,7 +31,7 @@ export default function CalendarPage() {
     const map = {};
     const expanded = expandRecurring(all, rangeStart, rangeEnd);
     [...all, ...expanded].forEach((it) => {
-      const k = dayKey(it.date);
+      const k = toDayKey(it.date);
       if (!k) return;
       (map[k] = map[k] || []).push(it);
     });
@@ -47,7 +42,7 @@ export default function CalendarPage() {
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
-  const selKey = selected.toISOString().slice(0, 10);
+  const selKey = toDayKey(selected);
   const selItems = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
   return (
@@ -75,7 +70,7 @@ export default function CalendarPage() {
           <div className="grid grid-cols-7 gap-1">
             {cells.map((d, i) => {
               if (!d) return <div key={i} />;
-              const k = d.toISOString().slice(0, 10);
+              const k = toDayKey(d);
               const dayItems = byDay[k] || [];
               const isToday = k === todayKey;
               const isSel = k === selKey;
