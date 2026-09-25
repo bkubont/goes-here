@@ -2,6 +2,8 @@
 // A single item with `recurring` + an anchor `date` is expanded virtually onto
 // each matching calendar date — no duplicated records, one source of truth.
 
+import { toDayKey } from "@/lib/itemTypes";
+
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 function daysInMonth(year, month) {
@@ -105,16 +107,19 @@ export function expandRecurring(items, start, end) {
     if (Number.isNaN(anchor.getTime())) return;
     const rec = parseRecurrence(it.recurring, anchor);
     if (!rec) return;
-    const aKey = anchor.toISOString().slice(0, 10);
+    const aKey = toDayKey(anchor);
     occurrenceDates(rec, anchor, start, end).forEach((d) => {
-      const key = d.toISOString().slice(0, 10);
+      const key = toDayKey(d);
       if (key === aKey) return; // original record already on anchor day
+      const when = new Date(d);
+      when.setHours(anchor.getHours(), anchor.getMinutes(), 0, 0);
       out.push({
         ...it,
         id: `${it.id}__${key}`,
-        date: d.toISOString(),
+        date: when.toISOString(),
         _recurringOccurrence: true,
         _originalId: it.id,
+        _originalDate: it.date,
       });
     });
   });
