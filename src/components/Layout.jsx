@@ -42,7 +42,7 @@ export default function Layout() {
   const [quickOpen, setQuickOpen] = React.useState(false);
   const { user, logout } = useAuth();
   const { data: items } = useItems({});
-  const inboxCount = (items || []).filter((i) => i.inbox || i.type === "to_schedule").length;
+  const inboxCount = (items || []).filter((i) => !i.completed && (i.inbox || i.type === "to_schedule")).length;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
