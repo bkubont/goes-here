@@ -2,7 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Inbox as InboxIcon, ArrowRight, Sparkles } from "lucide-react";
 import { useItems } from "@/lib/queries";
-import { ITEM_TYPES, isToday, isUpcoming } from "@/lib/itemTypes";
+import { ITEM_TYPES, isToday, isUpcoming, parseDay } from "@/lib/itemTypes";
+import { expandRecurring } from "@/lib/recurring";
 import ItemList from "@/components/ItemList";
 
 function greeting() {
@@ -16,12 +17,20 @@ export default function Home() {
   const { data: items } = useItems({});
   const all = items || [];
 
-  const today = all.filter((i) => !i.completed && (isToday(i.date) || isToday(i.due_date)));
-  const upcoming = all
-    .filter((i) => !i.completed && isUpcoming(i.date || i.due_date) && !isToday(i.date || i.due_date))
-    .sort((a, b) => new Date(a.date || a.due_date) - new Date(b.date || b.due_date))
+  // Include this week's repeats of recurring items alongside the real records.
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const active = all.filter((i) => !i.completed);
+  const withRepeats = [...active, ...expandRecurring(active, weekStart, weekEnd)];
+
+  const today = withRepeats.filter((i) => isToday(i.date) || isToday(i.due_date));
+  const upcoming = withRepeats
+    .filter((i) => isUpcoming(i.date || i.due_date) && !isToday(i.date || i.due_date))
+    .sort((a, b) => (parseDay(a.date || a.due_date)?.getTime() ?? 0) - (parseDay(b.date || b.due_date)?.getTime() ?? 0))
     .slice(0, 8);
-  const inboxCount = all.filter((i) => i.inbox || i.type === "to_schedule").length;
+  const inboxCount = active.filter((i) => i.inbox || i.type === "to_schedule").length;
   const ideasCount = all.filter((i) => i.type === "idea" && !i.completed).length;
 
   const counts = {};
