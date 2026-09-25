@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
-import { ITEM_TYPES, GROCERY_CATEGORIES } from "@/lib/itemTypes";
+import { ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey } from "@/lib/itemTypes";
 import { invalidateAll } from "@/lib/queries";
 
 export default function ItemDetailDrawer({ item, open, onOpenChange }) {
@@ -24,17 +24,20 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
 
   React.useEffect(() => {
     if (item) {
-      const d = item.date ? new Date(item.date) : null;
+      // A calendar repeat edits the whole series, so start from the series' own date.
+      const d = parseDay(item._recurringOccurrence ? item._originalDate : item.date);
+      const pad = (n) => String(n).padStart(2, "0");
       setForm({
         ...item,
-        date: d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : "",
-        time: item.time || (d ? d.toISOString().slice(11, 16) : ""),
+        date: d ? toDayKey(d) : "",
+        time: item.time || (d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : ""),
       });
     }
   }, [item]);
 
   if (!form) return null;
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const recordId = item._originalId || item.id;
 
   async function save() {
     setSaving(true);
@@ -65,7 +68,7 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         wrapped: !!form.wrapped,
         payment_status: form.payment_status,
       };
-      await entities.Item.update(item.id, payload);
+      await entities.Item.update(recordId, payload);
       invalidateAll();
       toast({ title: "Updated" });
       onOpenChange(false);
@@ -77,10 +80,10 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   }
 
   async function remove() {
-    if (!confirm("Delete this item?")) return;
+    if (!confirm(item.recurring ? "Delete this repeating item and all its repeats?" : "Delete this item?")) return;
     setSaving(true);
     try {
-      await entities.Item.delete(item.id);
+      await entities.Item.delete(recordId);
       invalidateAll();
       onOpenChange(false);
     } catch (e) {
@@ -99,6 +102,9 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto scrollbar-thin">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">Edit item</DialogTitle>
+          {item.recurring && (
+            <p className="text-xs text-muted-foreground">Repeats {item.recurring}. Changes apply to every repeat.</p>
+          )}
         </DialogHeader>
 
         <div className="space-y-4">
