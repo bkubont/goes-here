@@ -27,10 +27,30 @@ export const GROCERY_CATEGORIES = [
 
 export const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 
+// Date-only strings ("2026-09-25", e.g. due_date) are read as local midnight.
+// new Date() would read them as UTC midnight, which is the previous evening in
+// the Americas and shifts them back a day.
+export function parseDay(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Local calendar day as "YYYY-MM-DD" (toISOString() would give the UTC day).
+export function toDayKey(value) {
+  const d = value instanceof Date ? value : parseDay(value);
+  if (!d) return null;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function formatDate(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
+  const d = parseDay(iso);
+  if (!d) return "";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -45,15 +65,15 @@ export function formatTime(t) {
 }
 
 export function isToday(iso) {
-  if (!iso) return false;
-  const d = new Date(iso);
+  const d = parseDay(iso);
+  if (!d) return false;
   const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
 export function isUpcoming(iso) {
-  if (!iso) return false;
-  const d = new Date(iso);
+  const d = parseDay(iso);
+  if (!d) return false;
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
@@ -63,8 +83,8 @@ export function isUpcoming(iso) {
 }
 
 export function isOverdue(iso) {
-  if (!iso) return false;
-  const d = new Date(iso);
+  const d = parseDay(iso);
+  if (!d) return false;
   const now = new Date();
   d.setHours(0, 0, 0, 0);
   now.setHours(0, 0, 0, 0);
