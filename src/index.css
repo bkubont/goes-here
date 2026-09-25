@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 99%;
+    --foreground: 222 22% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 22% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 22% 12%;
+    --primary: 222 22% 14%;
+    --primary-foreground: 40 30% 99%;
+    --secondary: 40 24% 95%;
+    --secondary-foreground: 222 22% 14%;
+    --muted: 40 22% 95%;
+    --muted-foreground: 220 8% 44%;
+    --accent: 40 24% 93%;
+    --accent-foreground: 222 22% 14%;
+    --destructive: 0 72% 52%;
+    --destructive-foreground: 40 30% 99%;
+    --border: 40 16% 90%;
+    --input: 40 16% 88%;
+    --ring: 168 45% 34%;
+    --brand: 168 48% 30%;
+    --brand-foreground: 40 30% 99%;
+    --chart-1: 168 48% 30%;
+    --chart-2: 12 60% 52%;
+    --chart-3: 43 74% 56%;
+    --chart-4: 248 56% 62%;
+    --chart-5: 0 70% 56%;
+    --radius: 0.75rem;
+    --font-heading: "Fraunces", ui-serif, Georgia, serif;
+    --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Fraunces", ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sidebar-background: 40 30% 98%;
+    --sidebar-foreground: 222 18% 24%;
+    --sidebar-primary: 168 48% 30%;
+    --sidebar-primary-foreground: 40 30% 99%;
+    --sidebar-accent: 40 24% 92%;
+    --sidebar-accent-foreground: 222 22% 14%;
+    --sidebar-border: 40 16% 88%;
+    --sidebar-ring: 168 45% 34%;
+  }
+
+  .dark {
+    --background: 222 22% 9%;
+    --foreground: 40 20% 96%;
+    --card: 222 22% 11%;
+    --card-foreground: 40 20% 96%;
+    --popover: 222 22% 11%;
+    --popover-foreground: 40 20% 96%;
+    --primary: 40 20% 96%;
+    --primary-foreground: 222 22% 12%;
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 40 20% 96%;
+    --muted: 222 18% 16%;
+    --muted-foreground: 40 10% 65%;
+    --accent: 222 18% 18%;
+    --accent-foreground: 40 20% 96%;
+    --destructive: 0 62% 46%;
+    --destructive-foreground: 40 30% 99%;
+    --border: 222 14% 20%;
+    --input: 222 14% 22%;
+    --ring: 168 40% 50%;
+    --brand: 168 40% 48%;
+    --brand-foreground: 222 22% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}

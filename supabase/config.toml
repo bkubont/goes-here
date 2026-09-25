@@ -1,0 +1,4 @@
+project_id = "place"
+
+[functions.quick-add]
+verify_jwt = true
