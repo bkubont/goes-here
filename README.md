@@ -73,13 +73,18 @@ Open <http://localhost:5173>, create an account with an email that's on the fami
 
 Other scripts: `npm run build` (production build into `dist/`), `npm run lint`, `npm run preview`.
 
-## Hosting
+## Hosting on Hostinger
 
-`npm run build` produces a static site in `dist/` that any static host can serve (Netlify, Vercel, Cloudflare Pages, and others):
+The app is a static site, so any Hostinger web hosting plan can serve it. Supabase and the Quick Add function keep running on Supabase.
 
-- Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the host's environment settings.
-- Turn on single-page-app fallback (serve `index.html` for unknown paths) so links like `/calendar` work on reload.
-- Add the hosted address to Supabase's **Site URL** and **Redirect URLs**.
+1. **Build on your computer:** run `npm run build`. The Supabase values from `.env.local` are built into the files in `dist/`, so Hostinger needs no settings. (The publishable key is meant to be public.)
+2. **Upload:** in hPanel open **File Manager** (or connect over FTP) and upload the *contents* of `dist/` into `public_html`, or into the folder of a subdomain such as `place.yourdomain.com`. Include `.htaccess`: it makes links like `/calendar` work when a page is refreshed. File Manager may hide files that start with a dot, so check it arrived.
+3. **Turn on SSL** for the domain in hPanel (it's free) so the app loads over `https://`.
+4. **Tell Supabase the address:** in **Authentication → URL Configuration**, set **Site URL** to `https://yourdomain.com` and add `https://yourdomain.com/**` under **Redirect URLs**. Otherwise sign-up and password-reset emails link back to localhost.
+
+To publish an update, run `npm run build` again and upload the new `dist/` contents over the old ones.
+
+The `.htaccess` file is for Apache/LiteSpeed servers like Hostinger's. On another static host (Netlify, Vercel, Cloudflare Pages and similar), turn on its single-page-app fallback instead and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in its environment settings.
 
 ## Project layout
 

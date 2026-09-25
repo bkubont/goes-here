@@ -1,0 +1,10 @@
+# Hostinger (Apache/LiteSpeed): send every path that isn't a real file to
+# index.html so the app's own router can handle links like /calendar.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
