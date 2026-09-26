@@ -63,11 +63,13 @@ const ITEM_SCHEMA = {
     tags: { type: "array", items: { type: "string" } },
     inbox: { type: "boolean" },
     notes: nullableString,
+    // Keep in sync with duration fields / estimation in src/lib/estimateDuration.js.
+    duration_minutes: nullableNumber,
   },
   required: [
     "content", "type", "person_name", "responsible_name", "project_name", "date", "due_date",
     "time", "recurring", "priority", "category", "amount", "budget", "store", "location",
-    "tags", "inbox", "notes",
+    "tags", "inbox", "notes", "duration_minutes",
   ],
 };
 
@@ -116,6 +118,7 @@ LOCATION — a place if mentioned.
 TAGS — a few short lowercase keyword tags when helpful (empty array otherwise).
 INBOX — true ONLY if you cannot confidently determine where it belongs or it needs the user's decision (ambiguous project, unclear person, vague). Otherwise false.
 NOTES — any extra useful detail not captured above.
+DURATION_MINUTES — integer minutes when the user implies length ("30-minute call", "dentist for 45 minutes", "hour-long practice"). Null if not stated. Do not invent.
 
 RULES:
 - Produce one item per distinct thing; "and" linking different tasks → multiple items.

@@ -21,6 +21,9 @@ export const ITEM_TYPES = [
 
 export const ITEM_TYPE_MAP = Object.fromEntries(ITEM_TYPES.map((t) => [t.key, t]));
 
+// Duration defaults live in durationDefaults.js. Quick Add AI optional duration_minutes
+// must stay in sync with supabase/functions/quick-add/index.ts TYPE_ENUM above.
+
 export const GROCERY_CATEGORIES = [
   "Produce", "Meat", "Dairy", "Bakery", "Frozen", "Canned", "Snacks", "Beverages", "Household", "Other",
 ];

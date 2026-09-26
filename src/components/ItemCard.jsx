@@ -1,22 +1,22 @@
 import React from "react";
 import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatDate, formatTime, isOverdue } from "@/lib/itemTypes";
+import { formatDuration } from "@/lib/durationDefaults";
+import { completionPatch } from "@/lib/estimateDuration";
 import { invalidateAll } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { Check, CalendarDays, User, FolderKanban, AlertCircle, Repeat } from "lucide-react";
+import { Check, CalendarDays, User, FolderKanban, AlertCircle, Repeat, Clock } from "lucide-react";
 
 export default function ItemCard({ item, onOpen }) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
   const Icon = TI.icon;
   const overdue = !item.completed && (isOverdue(item.date) || isOverdue(item.due_date));
+  const durationLabel = formatDuration(item.duration_minutes);
 
   async function toggle(e) {
     e.stopPropagation();
     try {
-      await entities.Item.update(item.id, {
-        completed: !item.completed,
-        completed_date: !item.completed ? new Date().toISOString() : null,
-      });
+      await entities.Item.update(item.id, completionPatch(item, !item.completed));
       invalidateAll();
     } catch (e2) { /* bubble */ }
   }
@@ -70,6 +70,9 @@ export default function ItemCard({ item, onOpen }) {
             <span className={cn("inline-flex items-center gap-1", overdue && "text-destructive font-medium")}>
               due {formatDate(item.due_date)}
             </span>
+          )}
+          {durationLabel && (
+            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {durationLabel}</span>
           )}
           {item.project_name && (
             <span className="inline-flex items-center gap-1"><FolderKanban className="h-3 w-3" /> {item.project_name}</span>

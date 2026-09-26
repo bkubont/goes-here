@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Inbox as InboxIcon, ArrowRight, Sparkles } from "lucide-react";
+import { Inbox as InboxIcon, ArrowRight, Sparkles, CalendarDays, Columns3 } from "lucide-react";
 import { useItems } from "@/lib/queries";
 import { ITEM_TYPES, isToday, isUpcoming, parseDay } from "@/lib/itemTypes";
 import { expandRecurring } from "@/lib/recurring";
@@ -93,7 +93,17 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid sm:grid-cols-2 gap-4">
+      <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Link to="/calendar" className="rounded-xl border border-border bg-card p-5 hover:shadow-sm transition">
+          <div className="flex items-center gap-2 text-brand mb-1"><CalendarDays className="h-4 w-4" /><span className="text-xs font-medium uppercase tracking-wide">Plan</span></div>
+          <h3 className="font-display text-lg font-semibold">Plan today</h3>
+          <p className="text-sm text-muted-foreground mt-1">Day grid, unscheduled pool, and family workload.</p>
+        </Link>
+        <Link to="/board" className="rounded-xl border border-border bg-card p-5 hover:shadow-sm transition">
+          <div className="flex items-center gap-2 text-brand mb-1"><Columns3 className="h-4 w-4" /><span className="text-xs font-medium uppercase tracking-wide">Flow</span></div>
+          <h3 className="font-display text-lg font-semibold">Board</h3>
+          <p className="text-sm text-muted-foreground mt-1">Shared backlog → ready → doing → done.</p>
+        </Link>
         <Link to="/people" className="rounded-xl border border-border bg-card p-5 hover:shadow-sm transition">
           <h3 className="font-display text-lg font-semibold">People</h3>
           <p className="text-sm text-muted-foreground mt-1">Tasks, schedules & activities by family member.</p>

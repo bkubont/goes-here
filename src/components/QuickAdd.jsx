@@ -13,7 +13,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import { parseQuickAdd } from "@/lib/quickAdd";
 import { ITEM_TYPES, ITEM_TYPE_MAP } from "@/lib/itemTypes";
-import { usePeople, useProjects, invalidateAll } from "@/lib/queries";
+import { usePeople, useProjects, useItems, invalidateAll } from "@/lib/queries";
+import { applyDurationEstimate } from "@/lib/estimateDuration";
 
 function toDateISO(dateStr, timeStr) {
   if (!dateStr) return null;
@@ -30,6 +31,7 @@ export default function QuickAdd({ open, onOpenChange }) {
   const { toast } = useToast();
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
+  const { data: allItems } = useItems({});
   const [text, setText] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -76,8 +78,14 @@ export default function QuickAdd({ open, onOpenChange }) {
         tags: p.tags || [],
         inbox: !!p.inbox,
         notes: p.notes || "",
+        duration_minutes: p.duration_minutes != null && Number(p.duration_minutes) > 0
+          ? Math.round(Number(p.duration_minutes))
+          : null,
+        _ai_duration: p.duration_minutes != null && Number(p.duration_minutes) > 0
+          ? Math.round(Number(p.duration_minutes))
+          : null,
       }));
-      setDrafts(cleaned.length ? cleaned : [{ content: text.trim(), type: "todo", priority: "medium", tags: [], inbox: true }]);
+      setDrafts(cleaned.length ? cleaned : [{ content: text.trim(), type: "todo", priority: "medium", tags: [], inbox: true, duration_minutes: null }]);
     } catch (e) {
       toast({ title: "Couldn't parse that", description: e.message, variant: "destructive" });
     } finally {
@@ -96,29 +104,44 @@ export default function QuickAdd({ open, onOpenChange }) {
     if (!drafts.length) return;
     setSaving(true);
     try {
-      const records = drafts.map((d) => ({
-        content: d.content,
-        type: d.type,
-        person_name: d.person_name,
-        responsible_name: d.responsible_name,
-        project_name: d.project_name,
-        date: toDateISO(d.date, d.time),
-        due_date: d.due_date || null,
-        time: d.time || "",
-        recurring: d.recurring || "",
-        priority: d.priority || "medium",
-        category: d.category || "",
-        amount: d.amount,
-        budget: d.budget,
-        store: d.store || "",
-        location: d.location || "",
-        tags: d.tags || [],
-        inbox: !!d.inbox,
-        notes: d.notes || "",
-        completed: false,
-        payment_status: d.type === "bill" ? "unpaid" : undefined,
-        purchased: false,
-      }));
+      const records = drafts.map((d) => {
+        const est = applyDurationEstimate(
+          {
+            type: d.type,
+            category: d.category,
+            duration_minutes: d.duration_minutes,
+            duration_source: d.duration_source,
+          },
+          allItems || [],
+          d._ai_duration
+        );
+        return {
+          content: d.content,
+          type: d.type,
+          person_name: d.person_name,
+          responsible_name: d.responsible_name,
+          project_name: d.project_name,
+          date: toDateISO(d.date, d.time),
+          due_date: d.due_date || null,
+          time: d.time || "",
+          recurring: d.recurring || "",
+          priority: d.priority || "medium",
+          category: d.category || "",
+          amount: d.amount,
+          budget: d.budget,
+          store: d.store || "",
+          location: d.location || "",
+          tags: d.tags || [],
+          inbox: !!d.inbox,
+          notes: d.notes || "",
+          completed: false,
+          board_status: "backlog",
+          duration_minutes: est.duration_minutes,
+          duration_source: est.duration_source,
+          payment_status: d.type === "bill" ? "unpaid" : undefined,
+          purchased: false,
+        };
+      });
       await entities.Item.bulkCreate(records);
       invalidateAll();
       toast({ title: `Saved ${records.length} item${records.length > 1 ? "s" : ""}`, description: "Organized and in place." });
@@ -222,11 +245,23 @@ export default function QuickAdd({ open, onOpenChange }) {
                         onChange={(e) => updateDraft(idx, { content: e.target.value })}
                         className="font-medium"
                       />
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         <Input value={d.person_name} onChange={(e) => updateDraft(idx, { person_name: e.target.value })} placeholder="Person" className="h-8 text-sm" />
                         <Input type="date" value={d.date} onChange={(e) => updateDraft(idx, { date: e.target.value })} className="h-8 text-sm" />
                         <Input type="time" value={d.time} onChange={(e) => updateDraft(idx, { time: e.target.value })} className="h-8 text-sm" />
                         <Input value={d.project_name} onChange={(e) => updateDraft(idx, { project_name: e.target.value })} placeholder="Project" className="h-8 text-sm" />
+                        <Input
+                          type="number"
+                          min={5}
+                          step={5}
+                          value={d.duration_minutes ?? ""}
+                          onChange={(e) => updateDraft(idx, {
+                            duration_minutes: e.target.value ? Number(e.target.value) : null,
+                            duration_source: e.target.value ? "manual" : undefined,
+                          })}
+                          placeholder="Mins"
+                          className="h-8 text-sm"
+                        />
                       </div>
                       <div className="flex flex-wrap gap-1.5 pt-0.5">
                         {d.person_name && <span className="text-[11px] rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">{d.person_name}</span>}
