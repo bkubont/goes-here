@@ -15,12 +15,17 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import { ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey } from "@/lib/itemTypes";
-import { invalidateAll } from "@/lib/queries";
+import { completionPatch } from "@/lib/estimateDuration";
+import { invalidateAll, usePeople, useProjects } from "@/lib/queries";
 
 export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const { toast } = useToast();
+  const { data: people } = usePeople();
+  const { data: projects } = useProjects();
   const [form, setForm] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
+  const peopleNames = (people || []).map((p) => p.name);
+  const projectNames = (projects || []).map((p) => p.name);
 
   React.useEffect(() => {
     if (item) {
@@ -31,6 +36,8 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         ...item,
         date: d ? toDayKey(d) : "",
         time: item.time || (d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : ""),
+        duration_minutes: item.duration_minutes ?? "",
+        board_status: item.board_status || (item.completed ? "done" : "backlog"),
       });
     }
   }, [item]);
@@ -45,6 +52,12 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       const dateISO = form.date
         ? new Date(`${form.date}T${form.time || "09:00"}:00`).toISOString()
         : null;
+      const durationRaw = form.duration_minutes === "" || form.duration_minutes == null
+        ? null
+        : Number(form.duration_minutes);
+      const durationChanged =
+        durationRaw !== (item.duration_minutes == null ? null : Number(item.duration_minutes));
+      const completedChanged = !!form.completed !== !!item.completed;
       const payload = {
         content: form.content,
         type: form.type,
@@ -63,11 +76,26 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         location: form.location,
         notes: form.notes,
         inbox: !!form.inbox,
-        completed: !!form.completed,
         purchased: !!form.purchased,
         wrapped: !!form.wrapped,
         payment_status: form.payment_status,
+        board_status: form.board_status || "backlog",
       };
+      if (durationRaw != null && !Number.isNaN(durationRaw) && durationRaw > 0) {
+        payload.duration_minutes = Math.round(durationRaw);
+        if (durationChanged) payload.duration_source = "manual";
+        else if (form.duration_source) payload.duration_source = form.duration_source;
+      } else if (durationRaw === null) {
+        payload.duration_minutes = null;
+        payload.duration_source = null;
+      }
+      if (completedChanged) {
+        Object.assign(payload, completionPatch({ ...item, ...form }, !!form.completed));
+      } else {
+        payload.completed = !!form.completed;
+        if (form.completed && form.board_status !== "done") payload.board_status = "done";
+        if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
+      }
       await entities.Item.update(recordId, payload);
       invalidateAll();
       toast({ title: "Updated" });
@@ -141,15 +169,26 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Person (about)</Label>
-              <Input value={form.person_name || ""} onChange={(e) => set({ person_name: e.target.value })} />
+              <Input
+                list="place-people"
+                value={form.person_name || ""}
+                onChange={(e) => set({ person_name: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Responsible</Label>
-              <Input value={form.responsible_name || ""} onChange={(e) => set({ responsible_name: e.target.value })} />
+              <Input
+                list="place-people"
+                value={form.responsible_name || ""}
+                onChange={(e) => set({ responsible_name: e.target.value })}
+              />
             </div>
           </div>
+          <datalist id="place-people">
+            {peopleNames.map((n) => <option key={n} value={n} />)}
+          </datalist>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label>Date</Label>
               <Input type="date" value={form.date || ""} onChange={(e) => set({ date: e.target.value })} />
@@ -162,17 +201,48 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
               <Label>Due date</Label>
               <Input type="date" value={form.due_date || ""} onChange={(e) => set({ due_date: e.target.value })} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Duration (min)</Label>
+              <Input
+                type="number"
+                min={5}
+                step={5}
+                value={form.duration_minutes ?? ""}
+                onChange={(e) => set({ duration_minutes: e.target.value, duration_source: "manual" })}
+                placeholder="e.g. 25"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Project</Label>
-              <Input value={form.project_name || ""} onChange={(e) => set({ project_name: e.target.value })} />
+              <Input
+                list="place-projects"
+                value={form.project_name || ""}
+                onChange={(e) => set({ project_name: e.target.value })}
+              />
+              <datalist id="place-projects">
+                {projectNames.map((n) => <option key={n} value={n} />)}
+              </datalist>
             </div>
             <div className="space-y-1.5">
-              <Label>Recurring</Label>
-              <Input value={form.recurring || ""} onChange={(e) => set({ recurring: e.target.value })} placeholder="e.g. every Tuesday" />
+              <Label>Board</Label>
+              <Select value={form.board_status || "backlog"} onValueChange={(v) => set({ board_status: v, completed: v === "done" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="backlog">Backlog</SelectItem>
+                  <SelectItem value="ready">Ready</SelectItem>
+                  <SelectItem value="doing">Doing</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Recurring</Label>
+            <Input value={form.recurring || ""} onChange={(e) => set({ recurring: e.target.value })} placeholder="e.g. every Tuesday" />
           </div>
 
           {isGrocery && (

@@ -19,6 +19,7 @@ import People from '@/pages/People';
 import Projects from '@/pages/Projects';
 import SearchPage from '@/pages/SearchPage';
 import Inbox from '@/pages/Inbox';
+import Board from '@/pages/Board';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -45,6 +46,7 @@ const AuthenticatedApp = () => {
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/lists" element={<Lists />} />
           <Route path="/lists/:type" element={<Lists />} />
+          <Route path="/board" element={<Board />} />
           <Route path="/people" element={<People />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/search" element={<SearchPage />} />

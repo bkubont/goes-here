@@ -13,8 +13,8 @@ export function useItems(filter = {}, options = {}) {
     queryKey: ["items", filter],
     queryFn: async () => {
       const keys = Object.keys(filter);
-      if (keys.length === 0) return entities.Item.list("-created_date", 500);
-      return entities.Item.filter(filter, "-created_date", 500);
+      if (keys.length === 0) return entities.Item.list("-created_date", 1000);
+      return entities.Item.filter(filter, "-created_date", 1000);
     },
     staleTime: 1000 * 30,
     ...options,

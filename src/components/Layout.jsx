@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
-  Home, CalendarDays, LayoutList, Users, FolderKanban, Search, Inbox, Plus, Sparkles, LogOut,
+  Home, CalendarDays, LayoutList, Columns3, Users, FolderKanban, Search, Inbox, Plus, Sparkles, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useItems } from "@/lib/queries";
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/lists", label: "Lists", icon: LayoutList },
+  { to: "/board", label: "Board", icon: Columns3 },
   { to: "/people", label: "People", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/search", label: "Search", icon: Search },
