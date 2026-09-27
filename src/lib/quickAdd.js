@@ -21,11 +21,27 @@ export async function parseQuickAdd(text, knownPeople = [], knownProjects = []) 
 
   if (error) {
     let message = error.message;
+    let detail = data && typeof data === "object" ? data : null;
     try {
-      message = (await error.context.json()).error || message;
+      const body = await error.context.json();
+      if (body && typeof body === "object") detail = { ...detail, ...body };
     } catch {
-      // keep the generic message
+      // keep whatever we already have
     }
+    if (detail?.error) message = detail.error;
+    const bits = [];
+    if (detail?.openai_status != null) bits.push(`status ${detail.openai_status}`);
+    if (detail?.openai_error) bits.push(detail.openai_error);
+    if (bits.length) message = `${message} (${bits.join(": ")})`;
+    throw new Error(message);
+  }
+
+  if (data?.error) {
+    let message = data.error;
+    const bits = [];
+    if (data.openai_status != null) bits.push(`status ${data.openai_status}`);
+    if (data.openai_error) bits.push(data.openai_error);
+    if (bits.length) message = `${message} (${bits.join(": ")})`;
     throw new Error(message);
   }
 
