@@ -1,9 +1,11 @@
 import React from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { LayoutList, EyeOff, Eye, ShoppingCart, Plus, Settings } from "lucide-react";
+import {
+  LayoutList, EyeOff, Eye, ShoppingCart, Plus, Settings, AlertCircle, CalendarClock, Users,
+} from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
 import {
-  ITEM_TYPE_MAP, GROCERY_CATEGORIES,
+  ITEM_TYPE_MAP, GROCERY_CATEGORIES, isOverdue, isToday,
 } from "@/lib/itemTypes";
 import {
   loadListPrefs, visiblePlanningTypes, orderedPlanningTypes, setListTypeHidden,
@@ -18,6 +20,166 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
 import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
+
+/** Types that count as “need scheduled” when they have no date/due (Home/Inbox). */
+const SCHEDULABLE_TYPES = ["todo", "errand", "event", "household"];
+
+/** Create draft for ItemDetailDrawer — assignee filled by drawer from device person. */
+function blankCreateDraft(type = "todo") {
+  return {
+    _draft: true,
+    id: `draft-${type}-${Date.now()}`,
+    content: "",
+    type,
+    completed: false,
+    board_status: "backlog",
+    tags: [],
+    inbox: false,
+    priority: "medium",
+    responsible_name: "",
+  };
+}
+
+/** Match Home: to_schedule, or schedulable types missing both date and due_date. */
+function needsScheduled(item) {
+  if (item.completed) return false;
+  if (item.type === "to_schedule") return true;
+  if (!item.date && !item.due_date && SCHEDULABLE_TYPES.includes(item.type)) return true;
+  return false;
+}
+
+/** Match Home overdue attention (past day, not today). */
+function isPastDue(item) {
+  if (item.completed) return false;
+  return (
+    (item.date && isOverdue(item.date) && !isToday(item.date))
+    || (item.due_date && isOverdue(item.due_date) && !isToday(item.due_date))
+  );
+}
+
+function listHubStats(items) {
+  const active = items.filter((i) => !i.completed);
+  const needSched = active.filter(needsScheduled).length;
+  const pastDue = active.filter(isPastDue).length;
+  const byAssignee = {};
+  active.forEach((i) => {
+    const name = (i.responsible_name || "").trim();
+    if (!name) return;
+    byAssignee[name] = (byAssignee[name] || 0) + 1;
+  });
+  const assignees = Object.entries(byAssignee)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return {
+    active: active.length,
+    needSched,
+    pastDue,
+    assignees,
+    peopleCount: assignees.length,
+  };
+}
+
+function HubStatTags({ stats }) {
+  const top = stats.assignees.slice(0, 2);
+  const extraPeople = Math.max(0, stats.peopleCount - top.length);
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      <span className="inline-flex items-center rounded-[4px] border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">
+        {stats.active} active
+      </span>
+      {stats.needSched > 0 && (
+        <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <CalendarClock className="h-2.5 w-2.5" aria-hidden />
+          {stats.needSched} need sched
+        </span>
+      )}
+      {stats.pastDue > 0 && (
+        <span className="inline-flex items-center gap-0.5 rounded-[4px] border border-attention/40 bg-attention/15 px-1.5 py-0.5 text-[10px] font-semibold text-attention-foreground">
+          <AlertCircle className="h-2.5 w-2.5" aria-hidden />
+          {stats.pastDue} past due
+        </span>
+      )}
+      {stats.peopleCount > 0 && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded-[4px] border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground max-w-full truncate"
+          title={stats.assignees.map((a) => `${a.name} (${a.count})`).join(", ")}
+        >
+          <Users className="h-2.5 w-2.5 shrink-0" aria-hidden />
+          {top.map((a, i) => (
+            <span key={a.name}>
+              {i > 0 ? " · " : ""}
+              {a.name}
+              {a.count > 1 ? ` ${a.count}` : ""}
+            </span>
+          ))}
+          {extraPeople > 0 && (
+            <span>
+              {" "}
+              +{extraPeople}
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ListHubCard({
+  to,
+  label,
+  icon: Icon,
+  toneClass,
+  stats,
+  onAdd,
+  dimmed,
+  footer,
+  hideToggle,
+}) {
+  const pastDue = stats?.pastDue > 0;
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col rounded-xl border bg-card p-3 transition hover:shadow-sm",
+        pastDue ? "border-attention/50" : "border-border",
+        dimmed && "opacity-50"
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <Link to={to} className="flex min-w-0 flex-1 items-start gap-2.5">
+          <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[6px] border", toneClass)}>
+            <Icon className="h-[18px] w-[18px]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium leading-tight">
+              <span className="truncate">{label}</span>
+            </p>
+            {stats && <HubStatTags stats={stats} />}
+          </div>
+        </Link>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {onAdd && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAdd();
+              }}
+              className="grid h-9 w-9 place-items-center rounded-[6px] bg-attention text-attention-foreground hover:opacity-90"
+              aria-label={`Add to ${label}`}
+              title={`Add to ${label}`}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+          {hideToggle}
+        </div>
+      </div>
+      {footer && <div className="mt-2 pt-2 border-t border-border">{footer}</div>}
+    </div>
+  );
+}
+
 
 function sortItems(a, b) {
   const byDone = Number(a.completed) - Number(b.completed);
@@ -126,6 +288,7 @@ export default function Lists() {
   const [listPrefs, setListPrefs] = React.useState(loadListPrefs);
   const [showHidden, setShowHidden] = React.useState(false);
   const [giftDraft, setGiftDraft] = React.useState(null);
+  const [createDraft, setCreateDraft] = React.useState(null);
   const selection = useListSelection(type || "overview");
   const saved = React.useMemo(() => loadListsFilters(), []);
   const personFromUrl = searchParams.get("person");
@@ -170,8 +333,8 @@ export default function Lists() {
   }
 
   if (!type) {
-    const groceryActive = all.filter((i) => i.type === "grocery" && !i.completed).length;
-    const planningActive = all.filter((i) => i.type !== "grocery" && !i.completed).length;
+    const groceryStats = listHubStats(all.filter((i) => i.type === "grocery"));
+    const allStats = listHubStats(all.filter((i) => i.type !== "grocery"));
     const hubTypes = showHidden ? orderedTypes : visibleTypes;
     const groceryTI = ITEM_TYPE_MAP.grocery;
 
@@ -202,17 +365,16 @@ export default function Lists() {
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Shopping
           </h2>
-          <div className="flex min-h-[56px] items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5">
-            <Link to="/lists/grocery" className="flex min-w-0 flex-1 items-center gap-3 px-1 py-1.5">
-              <span className={cn("grid h-9 w-9 place-items-center rounded-[6px] border", groceryTI.tone)}>
-                <ShoppingCart className="h-[18px] w-[18px]" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Groceries</p>
-                <p className="text-xs text-muted-foreground">{groceryActive} on the list</p>
-              </div>
-            </Link>
-            <ShopModeLink />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <ListHubCard
+              to="/lists/grocery"
+              label="Groceries"
+              icon={ShoppingCart}
+              toneClass={groceryTI.tone}
+              stats={groceryStats}
+              onAdd={() => setCreateDraft(blankCreateDraft("grocery"))}
+              footer={<ShopModeLink compact />}
+            />
           </div>
         </section>
 
@@ -220,55 +382,54 @@ export default function Lists() {
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Lists
           </h2>
-          <div className="space-y-1.5">
-            <Link
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <ListHubCard
               to="/lists/all"
-              className="flex min-h-[52px] items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 hover:shadow-sm transition"
-            >
-              <span className="grid h-9 w-9 place-items-center rounded-[6px] border bg-muted text-muted-foreground border-border">
-                <LayoutList className="h-[18px] w-[18px]" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">All lists</p>
-                <p className="text-xs text-muted-foreground">{planningActive} active · groceries not included</p>
-              </div>
-            </Link>
+              label="All lists"
+              icon={LayoutList}
+              toneClass="bg-muted text-muted-foreground border-border"
+              stats={allStats}
+            />
 
             {hubTypes.map((t) => {
-              const Icon = t.icon;
-              const c = all.filter((i) => i.type === t.key && !i.completed).length;
+              const stats = listHubStats(all.filter((i) => i.type === t.key));
               const isHidden = listPrefs.hidden.includes(t.key);
               return (
-                <div
+                <ListHubCard
                   key={t.key}
-                  className={cn(
-                    "flex min-h-[52px] items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5",
-                    isHidden && "opacity-50"
+                  to={`/lists/${t.key}`}
+                  label={t.plural || t.label}
+                  icon={t.icon}
+                  toneClass={t.tone}
+                  stats={stats}
+                  dimmed={isHidden}
+                  onAdd={() => setCreateDraft(blankCreateDraft(t.key))}
+                  hideToggle={(
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleHidden(t.key);
+                      }}
+                      className="grid h-8 w-8 place-items-center rounded-[6px] text-muted-foreground hover:bg-accent"
+                      aria-label={isHidden ? `Show ${t.label}` : `Hide ${t.label}`}
+                      title={isHidden ? "Show on lists overview" : "Hide from lists overview"}
+                    >
+                      {isHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    </button>
                   )}
-                >
-                  <Link to={`/lists/${t.key}`} className="flex min-w-0 flex-1 items-center gap-3 px-1 py-1.5">
-                    <span className={cn("grid h-9 w-9 place-items-center rounded-[6px] border", t.tone)}>
-                      <Icon className="h-[18px] w-[18px]" />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{t.plural || t.label}</p>
-                      <p className="text-xs text-muted-foreground">{c} active</p>
-                    </div>
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => toggleHidden(t.key)}
-                    className="grid h-10 w-10 place-items-center rounded-[6px] text-muted-foreground hover:bg-accent"
-                    aria-label={isHidden ? `Show ${t.label}` : `Hide ${t.label}`}
-                    title={isHidden ? "Show on lists overview" : "Hide from lists overview"}
-                  >
-                    {isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                  </button>
-                </div>
+                />
               );
             })}
           </div>
         </section>
+
+        <ItemDetailDrawer
+          item={createDraft}
+          open={!!createDraft}
+          onOpenChange={(o) => !o && setCreateDraft(null)}
+        />
       </div>
     );
   }
