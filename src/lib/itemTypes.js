@@ -22,8 +22,15 @@ export const ITEM_TYPES = [
   { key: "household", label: "Household", plural: "Household", icon: Home, tone: TONE },
 ];
 
-/** Default pinned list shortcuts on Home (not all 13 empty types). */
-export const PINNED_LIST_KEYS = ["todo", "grocery", "bill", "errand", "event", "shopping"];
+/**
+ * Planning / list-type shortcuts (excludes grocery — shopping is its own surface).
+ * Used on Home and the Lists hub “Lists” section.
+ */
+export const PINNED_LIST_KEYS = ["todo", "bill", "errand", "event", "shopping"];
+
+/** Item types shown under Lists / All — grocery lives under Shopping instead. */
+export const PLANNING_TYPES = ITEM_TYPES.filter((t) => t.key !== "grocery");
+export const PLANNING_TYPE_KEYS = PLANNING_TYPES.map((t) => t.key);
 
 export const STATUS_LABELS = {
   backlog: "Backlog",

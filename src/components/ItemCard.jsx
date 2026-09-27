@@ -104,7 +104,7 @@ export default function ItemCard({
           aria-label={selected ? "Deselect" : "Select"}
           aria-pressed={selected}
           className={cn(
-            "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-[6px] border transition",
+            "relative z-10 -ml-1 mt-0.5 grid h-12 w-12 shrink-0 place-items-center rounded-[6px] border transition touch-manipulation",
             selected
               ? "bg-primary border-primary text-primary-foreground"
               : "border-border hover:border-primary"
@@ -122,7 +122,7 @@ export default function ItemCard({
           onClick={toggle}
           aria-label={item.completed ? "Mark incomplete" : "Mark complete"}
           className={cn(
-            "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full border transition",
+            "relative z-10 -ml-1 mt-0.5 grid h-12 w-12 shrink-0 place-items-center rounded-full border transition touch-manipulation",
             item.completed
               ? "bg-primary border-primary text-primary-foreground"
               : "border-border hover:border-primary"
