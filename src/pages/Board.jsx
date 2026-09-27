@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { loadBoardFilters, saveBoardFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
 
 const COLUMNS = [
   { key: "backlog", label: "Backlog" },
@@ -38,11 +39,41 @@ export default function Board() {
   const [active, setActive] = React.useState(null);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [stage, setStage] = React.useState(searchParams.get("stage") || "backlog");
+  const [restored, setRestored] = React.useState(false);
+
+  // Restore last-used filters from this device when the URL has none.
+  React.useEffect(() => {
+    if (restored) return;
+    const hasUrlFilter = ["responsible", "person", "project", "type"].some((k) => searchParams.get(k));
+    if (!hasUrlFilter) {
+      const saved = loadBoardFilters();
+      const next = new URLSearchParams(searchParams);
+      let changed = false;
+      Object.entries(saved).forEach(([k, v]) => {
+        if (v && v !== "all") {
+          next.set(k, v);
+          changed = true;
+        }
+      });
+      if (changed) setSearchParams(next, { replace: true });
+    }
+    setRestored(true);
+  }, [restored, searchParams, setSearchParams]);
 
   const filterResponsible = searchParams.get("responsible") || "all";
   const filterPerson = searchParams.get("person") || "all";
   const filterProject = searchParams.get("project") || "all";
   const filterType = searchParams.get("type") || "all";
+
+  React.useEffect(() => {
+    if (!restored) return;
+    saveBoardFilters({
+      responsible: filterResponsible,
+      person: filterPerson,
+      project: filterProject,
+      type: filterType,
+    });
+  }, [filterResponsible, filterPerson, filterProject, filterType, restored]);
 
   const all = items || [];
 
@@ -240,10 +271,16 @@ export default function Board() {
       </div>
 
       {(filtersOpen || (!isMobile && filterActive)) && (
-        <div className="mb-4">{filterBar}</div>
+        <div className="mb-4 space-y-1.5">
+          {filterBar}
+          <p className="text-[11px] text-muted-foreground">{SAVED_FILTERS_HINT} (type, person, assigned, project).</p>
+        </div>
       )}
       {!isMobile && !filtersOpen && !filterActive && (
-        <div className="mb-4 hidden md:block">{filterBar}</div>
+        <div className="mb-4 hidden md:block space-y-1.5">
+          {filterBar}
+          <p className="text-[11px] text-muted-foreground">{SAVED_FILTERS_HINT} (type, person, assigned, project).</p>
+        </div>
       )}
 
       {workload.length > 0 && (

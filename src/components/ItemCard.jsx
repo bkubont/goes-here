@@ -5,7 +5,9 @@ import { formatDuration } from "@/lib/durationDefaults";
 import { completionPatch } from "@/lib/estimateDuration";
 import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { Check, CalendarDays, UserCheck, FolderKanban, AlertCircle, Repeat, Clock } from "lucide-react";
+import { Check, CalendarDays, UserCheck, FolderKanban, AlertCircle, Repeat, Clock, Bell } from "lucide-react";
+import { formatRecurrenceSummary } from "@/lib/recurring";
+import { reminderLabel, isReminderDue } from "@/lib/reminders";
 
 export default function ItemCard({ item, onOpen }) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
@@ -106,7 +108,15 @@ export default function ItemCard({ item, onOpen }) {
           )}
           {item.recurring && (
             <span className="inline-flex items-center gap-1 text-muted-foreground">
-              <Repeat className="h-3 w-3" /> {item.recurring}
+              <Repeat className="h-3 w-3" /> {formatRecurrenceSummary(item.recurring, item._originalDate || item.date) || item.recurring}
+            </span>
+          )}
+          {item.reminder_offset && (
+            <span className={cn(
+              "inline-flex items-center gap-1 rounded-[4px] border px-1.5 py-0.5",
+              isReminderDue(item) ? "border-attention/50 bg-attention/15 text-attention-foreground" : "border-border"
+            )}>
+              <Bell className="h-3 w-3" /> {reminderLabel(item.reminder_offset) || "Reminder"}
             </span>
           )}
           {item.inbox && (

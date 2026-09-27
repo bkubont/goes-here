@@ -37,6 +37,7 @@ export const STATUS_LABELS = {
   unscheduled: "Unscheduled",
 };
 
+/** @deprecated Prefer RECURRENCE_CHOICES from @/lib/recurring — kept for callers. */
 export const RECURRING_PRESETS = [
   { value: "", label: "Does not repeat" },
   { value: "daily", label: "Daily" },

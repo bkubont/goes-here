@@ -1,14 +1,20 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon,
+  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell,
 } from "lucide-react";
-import { useItems } from "@/lib/queries";
+import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
+import { entities } from "@/api/entities";
 import {
   ITEM_TYPE_MAP, PINNED_LIST_KEYS, isToday, isUpcoming, isOverdue, parseDay, toDayKey,
 } from "@/lib/itemTypes";
-import { expandRecurring } from "@/lib/recurring";
+import { expandRecurring, exceptionSet } from "@/lib/recurring";
+import { dueReminders } from "@/lib/reminders";
 import ItemList from "@/components/ItemList";
+import ItemCard from "@/components/ItemCard";
+import ItemDetailDrawer from "@/components/ItemDetailDrawer";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
 function timeSortKey(it) {
@@ -17,8 +23,48 @@ function timeSortKey(it) {
   return `${d ? toDayKey(d) : "9999"}-${t}`;
 }
 
+function visibleOnDay(it, dayKey) {
+  if (!dayKey) return true;
+  if (it._recurringOccurrence) return true;
+  return !exceptionSet(it).has(dayKey);
+}
+
+function DueRemindersBlock({ items, onDismiss }) {
+  const [active, setActive] = React.useState(null);
+  if (!items.length) return null;
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-heading text-base font-semibold flex items-center gap-2">
+          <Bell className="h-4 w-4 text-attention" /> Due reminders
+        </h2>
+        <span className="text-xs text-muted-foreground">In-app only · no push</span>
+      </div>
+      <div className="space-y-2">
+        {items.map((it) => (
+          <div key={it.id} className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <ItemCard item={it} onOpen={setActive} />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-[44px] shrink-0 text-xs"
+              onClick={() => onDismiss(it)}
+            >
+              Clear
+            </Button>
+          </div>
+        ))}
+      </div>
+      <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+    </section>
+  );
+}
+
 export default function Home() {
   const { data: items } = useItems({});
+  const { toast } = useToast();
   const all = items || [];
 
   const weekStart = new Date();
@@ -29,11 +75,14 @@ export default function Home() {
   const withRepeats = [...active, ...expandRecurring(active, weekStart, weekEnd)];
 
   const today = withRepeats
-    .filter((i) => isToday(i.date) || isToday(i.due_date))
+    .filter((i) => (isToday(i.date) || isToday(i.due_date)) && visibleOnDay(i, toDayKey(i.date || i.due_date)))
     .sort((a, b) => timeSortKey(a).localeCompare(timeSortKey(b)));
 
   const upcoming = withRepeats
-    .filter((i) => isUpcoming(i.date || i.due_date) && !isToday(i.date || i.due_date))
+    .filter((i) => {
+      const day = i.date || i.due_date;
+      return isUpcoming(day) && !isToday(day) && visibleOnDay(i, toDayKey(day));
+    })
     .sort((a, b) => (parseDay(a.date || a.due_date)?.getTime() ?? 0) - (parseDay(b.date || b.due_date)?.getTime() ?? 0))
     .slice(0, 8);
 
@@ -44,6 +93,7 @@ export default function Home() {
   const unscheduled = active.filter((i) => i.type === "to_schedule" || (!i.date && !i.due_date && ["todo", "errand", "event", "household"].includes(i.type)));
   const needsReview = active.filter((i) => i.inbox);
   const billsDue = active.filter((i) => i.type === "bill" && i.payment_status !== "paid" && (isOverdue(i.due_date) || isToday(i.due_date) || isUpcoming(i.due_date) || !i.due_date));
+  const reminders = dueReminders(active);
 
   const attention = [
     overdue.length > 0 && {
@@ -78,6 +128,14 @@ export default function Home() {
       to: "/lists/bill",
       icon: Receipt,
     },
+    reminders.length > 0 && {
+      key: "reminders",
+      label: "Due reminders",
+      count: reminders.length,
+      hint: "Stored in GoesHere — no push yet",
+      to: "/inbox#reminders",
+      icon: Bell,
+    },
   ].filter(Boolean);
 
   const pinned = PINNED_LIST_KEYS.map((key) => {
@@ -89,6 +147,16 @@ export default function Home() {
   const dateLabel = new Date().toLocaleDateString(undefined, {
     weekday: "long", month: "long", day: "numeric",
   });
+
+  async function dismissReminder(item) {
+    try {
+      const row = await entities.Item.update(item.id, { reminder_dismissed_at: new Date().toISOString() });
+      patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
+      await invalidateAll();
+    } catch (e) {
+      toast({ title: "Could not dismiss", description: e.message, variant: "destructive" });
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8 space-y-8">
@@ -124,6 +192,10 @@ export default function Home() {
             })}
           </div>
         </section>
+      )}
+
+      {reminders.length > 0 && (
+        <DueRemindersBlock items={reminders.slice(0, 5)} onDismiss={dismissReminder} />
       )}
 
       <section>
