@@ -16,6 +16,33 @@ import { resolveBlockMinutes } from "@/lib/estimateDuration";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** Types families typically time-block (not grocery/bills/notes). */
+const POOL_TYPES = new Set([
+  "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
+]);
+
+function hasClockTime(it) {
+  return !!(it.time && String(it.time).trim());
+}
+
+/** Unscheduled / to_schedule / due-or-dated today without time / inbox. */
+function isPoolCandidate(it, dayKey) {
+  if (!it || it.completed) return false;
+  // Already has a clock time — belongs on a day grid, not the pool.
+  if (hasClockTime(it)) return false;
+
+  if (it.type === "to_schedule" || it.inbox) return true;
+
+  const dateKey = toDayKey(it.date);
+  const dueKey = toDayKey(it.due_date);
+  if (dayKey && (dateKey === dayKey || dueKey === dayKey)) return true;
+
+  // Undated actionable work that still needs a slot.
+  if (!dateKey && !dueKey && POOL_TYPES.has(it.type)) return true;
+
+  return false;
+}
+
 function recordId(it) {
   return it._originalId || it.id;
 }
@@ -69,16 +96,11 @@ export default function CalendarPage() {
   const selKey = toDayKey(selected);
   const selItems = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
-  // Unscheduled pool: to_schedule, inbox, or dated without time / due without time
+  // Unscheduled pool: actionable items the family can drag onto this day's grid.
+  // Timed items stay on the grid; completed stay out.
   const poolItems = React.useMemo(() => {
-    return all.filter((it) => {
-      if (it.completed) return false;
-      if (it.type === "to_schedule" || it.inbox) return true;
-      if (it.date && !it.time) return true;
-      if (it.due_date && !it.date && !it.time) return true;
-      return false;
-    });
-  }, [all]);
+    return all.filter((it) => isPoolCandidate(it, selKey));
+  }, [all, selKey]);
 
   const responsibleNames = React.useMemo(() => {
     const set = new Set();

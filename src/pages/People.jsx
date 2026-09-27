@@ -1,13 +1,37 @@
 import React from "react";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Pencil } from "lucide-react";
 import { usePeople, useItems, invalidateAll } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import ItemList from "@/components/ItemList";
 
 const COLORS = ["#0f766e", "#4f46e5", "#b45309", "#be123c", "#1d4ed8", "#7c3aed", "#15803d"];
+
+function birthdayInputValue(value) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  return "";
+}
+
+async function cascadePersonRename(oldName, newName, items) {
+  if (!oldName || !newName || oldName === newName) return 0;
+  const matches = (items || []).filter(
+    (i) => i.person_name === oldName || i.responsible_name === oldName
+  );
+  await Promise.all(
+    matches.map((it) => {
+      const patch = {};
+      if (it.person_name === oldName) patch.person_name = newName;
+      if (it.responsible_name === oldName) patch.responsible_name = newName;
+      return entities.Item.update(it.id, patch);
+    })
+  );
+  return matches.length;
+}
 
 export default function People() {
   const { toast } = useToast();
@@ -17,6 +41,15 @@ export default function People() {
   const [name, setName] = React.useState("");
   const [role, setRole] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [editForm, setEditForm] = React.useState({
+    name: "",
+    role: "",
+    color: COLORS[0],
+    birthday: "",
+    notes: "",
+  });
+  const [editSaving, setEditSaving] = React.useState(false);
 
   const list = people || [];
   const allItems = items || [];
@@ -40,6 +73,45 @@ export default function People() {
     }
   }
 
+  function startEdit(person) {
+    setEditForm({
+      name: person?.name || "",
+      role: person?.role || "",
+      color: person?.color || COLORS[0],
+      birthday: birthdayInputValue(person?.birthday),
+      notes: person?.notes || "",
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    const person = list.find((p) => p.id === selected);
+    if (!person || !editForm.name.trim()) return;
+    setEditSaving(true);
+    const nextName = editForm.name.trim();
+    const oldName = person.name;
+    try {
+      await entities.Person.update(person.id, {
+        name: nextName,
+        role: editForm.role.trim(),
+        color: editForm.color || COLORS[0],
+        birthday: editForm.birthday || null,
+        notes: editForm.notes.trim(),
+      });
+      if (oldName !== nextName) {
+        await cascadePersonRename(oldName, nextName, allItems);
+      }
+      invalidateAll();
+      setEditing(false);
+      toast({ title: "Person updated" });
+    } catch (err) {
+      toast({ title: "Couldn't update person", description: err.message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   if (selected) {
     const person = list.find((p) => p.id === selected);
     const theirs = allItems.filter((i) => i.person_name === person?.name || i.responsible_name === person?.name);
@@ -47,14 +119,108 @@ export default function People() {
     const responsible = theirs.filter((i) => i.responsible_name === person?.name && !i.completed);
     return (
       <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
-        <button onClick={() => setSelected(null)} className="text-sm text-muted-foreground hover:text-foreground mb-3">← All people</button>
-        <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => {
+            setSelected(null);
+            setEditing(false);
+          }}
+          className="text-sm text-muted-foreground hover:text-foreground mb-3"
+        >
+          ← All people
+        </button>
+        <div className="flex items-center gap-3 mb-4">
           <span className="grid h-12 w-12 place-items-center rounded-full text-white font-semibold" style={{ background: person?.color }}>{person?.name?.[0]}</span>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="font-display text-2xl font-semibold">{person?.name}</h1>
             <p className="text-sm text-muted-foreground">{person?.role || "—"}</p>
           </div>
+          {!editing && (
+            <Button type="button" variant="outline" size="sm" onClick={() => startEdit(person)}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+            </Button>
+          )}
         </div>
+
+        {editing ? (
+          <form onSubmit={saveEdit} className="rounded-xl border border-border bg-card p-4 space-y-3 mb-6">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="person-name">Name</Label>
+                <Input
+                  id="person-name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="person-role">Role</Label>
+                <Input
+                  id="person-role"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
+                  placeholder="e.g. son"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="person-birthday">Birthday</Label>
+                <Input
+                  id="person-birthday"
+                  type="date"
+                  value={editForm.birthday}
+                  onChange={(e) => setEditForm((f) => ({ ...f, birthday: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Color</Label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditForm((f) => ({ ...f, color: c }))}
+                      className="h-7 w-7 rounded-full border-2 transition"
+                      style={{
+                        background: c,
+                        borderColor: editForm.color === c ? "var(--foreground)" : "transparent",
+                      }}
+                      aria-label={`Color ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="person-notes">Notes</Label>
+              <Textarea
+                id="person-notes"
+                rows={3}
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Allergies, preferences, reminders…"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Button type="submit" disabled={editSaving || !editForm.name.trim()}>
+                {editSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Save
+              </Button>
+              <Button type="button" variant="ghost" disabled={editSaving} onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          (person?.birthday || person?.notes) && (
+            <div className="rounded-xl border border-border bg-card p-4 mb-6 space-y-1 text-sm">
+              {person.birthday && (
+                <p><span className="text-muted-foreground">Birthday:</span> {birthdayInputValue(person.birthday)}</p>
+              )}
+              {person.notes && <p className="whitespace-pre-wrap">{person.notes}</p>}
+            </div>
+          )
+        )}
+
         {about.length > 0 && (
           <section className="mb-6">
             <h2 className="font-display text-lg font-semibold mb-2">About {person?.name}</h2>
