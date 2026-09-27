@@ -3,13 +3,26 @@
 //
 // Secrets (set with `supabase secrets set`):
 //   OPENAI_API_KEY           required
-//   OPENAI_MODEL             optional, default "gpt-6-luna"
-//   OPENAI_REASONING_EFFORT  optional, default "low"; set to "" for models without reasoning
+//   OPENAI_MODEL             optional, default "gpt-4o-mini"
+//   OPENAI_REASONING_EFFORT  optional; only sent when set to a non-empty value
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-6-luna";
-const REASONING_EFFORT = Deno.env.get("OPENAI_REASONING_EFFORT") ?? "low";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
+const REASONING_EFFORT = (Deno.env.get("OPENAI_REASONING_EFFORT") ?? "").trim();
+
+/** Safe, truncated OpenAI error text for the client (never include API keys). */
+function summarizeOpenAIError(raw: string): string {
+  const text = (raw || "").slice(0, 2000);
+  try {
+    const parsed = JSON.parse(text);
+    const msg = parsed?.error?.message ?? parsed?.message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim().slice(0, 300);
+  } catch {
+    // fall through to raw truncation
+  }
+  return text.trim().slice(0, 300) || "Unknown OpenAI error";
+}
 
 // Keep in sync with ITEM_TYPES and GROCERY_CATEGORIES in src/lib/itemTypes.js.
 const TYPE_ENUM = [
@@ -181,8 +194,14 @@ Deno.serve(async (req) => {
   });
 
   if (!res.ok) {
-    console.error("OpenAI error", res.status, await res.text());
-    return json({ error: "The AI service couldn't process that. Please try again." }, 502);
+    const rawBody = await res.text();
+    const openai_error = summarizeOpenAIError(rawBody);
+    console.error("OpenAI error", res.status, openai_error);
+    return json({
+      error: "The AI service couldn't process that. Please try again.",
+      openai_status: res.status,
+      openai_error,
+    }, 502);
   }
 
   const completion = await res.json();

@@ -55,8 +55,8 @@ Optional secrets:
 
 | Secret | Default | Purpose |
 | --- | --- | --- |
-| `OPENAI_MODEL` | `gpt-6-luna` | The OpenAI model used to sort entries |
-| `OPENAI_REASONING_EFFORT` | `low` | Set to an empty value if you switch to a model without reasoning support |
+| `OPENAI_MODEL` | `gpt-4o-mini` | The OpenAI model used to sort entries |
+| `OPENAI_REASONING_EFFORT` | *(unset / off)* | Only sent when set to a non-empty value; leave unset for non-reasoning models |
 
 ### 6. Connect the app to Supabase
 
