@@ -6,6 +6,7 @@ import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from 
 import ItemList from "@/components/ItemList";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import CollapsibleListSection from "@/components/CollapsibleListSection";
+import BulkCompleteBar, { useListSelection } from "@/components/BulkCompleteBar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
@@ -28,8 +29,8 @@ function sortItems(a, b) {
   const aDate = a.due_date || a.date || "";
   const bDate = b.due_date || b.date || "";
   if (aDate !== bDate) return String(aDate).localeCompare(String(bDate));
-  const aUp = a.updated_date || a.created_date || "";
-  const bUp = b.updated_date || b.created_date || "";
+  const aUp = a.updated_at || a.updated_date || a.created_date || "";
+  const bUp = b.updated_at || b.updated_date || b.created_date || "";
   return String(bUp).localeCompare(String(aUp));
 }
 
@@ -118,6 +119,7 @@ export default function Lists() {
   const [hidden, setHidden] = React.useState(loadHidden);
   const [showHidden, setShowHidden] = React.useState(false);
   const [giftDraft, setGiftDraft] = React.useState(null);
+  const selection = useListSelection(type || "overview");
   const saved = React.useMemo(() => loadListsFilters(), []);
   const personFromUrl = searchParams.get("person");
   const [filterPerson, setFilterPerson] = React.useState(personFromUrl || saved.person || "all");
@@ -276,6 +278,14 @@ export default function Lists() {
           peopleNames={peopleNames}
         />
 
+        <BulkCompleteBar
+          selectMode={selection.selectMode}
+          selectedIds={selection.selectedIds}
+          items={active}
+          onSelectModeChange={selection.setSelectMode}
+          onSelectedIdsChange={selection.setSelectedIds}
+        />
+
         <div className="space-y-2">
           {typeOrder.map((key) => {
             const TI = ITEM_TYPE_MAP[key];
@@ -295,10 +305,10 @@ export default function Lists() {
                 {key === "grocery" ? (
                   <div className="space-y-2">
                     <ShopModeLink compact />
-                    <GroceryView items={byType[key]} />
+                    <GroceryView items={byType[key]} listProps={selection.listProps} />
                   </div>
                 ) : (
-                  <ItemList items={byType[key]} />
+                  <ItemList items={byType[key]} {...selection.listProps} />
                 )}
               </CollapsibleListSection>
             );
@@ -310,7 +320,7 @@ export default function Lists() {
               label={key}
               count={byType[key].length}
             >
-              <ItemList items={byType[key]} />
+              <ItemList items={byType[key]} {...selection.listProps} />
             </CollapsibleListSection>
           ))}
           {!active.length && (
@@ -408,10 +418,22 @@ export default function Lists() {
         peopleNames={peopleNames}
       />
 
+      <BulkCompleteBar
+        selectMode={selection.selectMode}
+        selectedIds={selection.selectedIds}
+        items={active}
+        onSelectModeChange={selection.setSelectMode}
+        onSelectedIdsChange={selection.setSelectedIds}
+      />
+
       {type === "grocery" ? (
-        <GroceryView items={active} />
+        <GroceryView items={active} listProps={selection.listProps} />
       ) : (
-        <ItemList items={active} emptyHint={`No ${(TI.plural || TI.label).toLowerCase()} yet. Add one with Quick Add.`} />
+        <ItemList
+          items={active}
+          emptyHint={`No ${(TI.plural || TI.label).toLowerCase()} yet. Add one with Quick Add.`}
+          {...selection.listProps}
+        />
       )}
 
       {done.length > 0 && (
@@ -446,7 +468,7 @@ function ShopModeLink({ compact = false }) {
   );
 }
 
-function GroceryView({ items }) {
+function GroceryView({ items, listProps = {} }) {
   const groups = {};
   GROCERY_CATEGORIES.forEach((c) => (groups[c] = []));
   items.forEach((it) => {
@@ -462,7 +484,7 @@ function GroceryView({ items }) {
           label={c}
           count={groups[c].length}
         >
-          <ItemList items={groups[c]} />
+          <ItemList items={groups[c]} {...listProps} />
         </CollapsibleListSection>
       ))}
       {!items.length && (

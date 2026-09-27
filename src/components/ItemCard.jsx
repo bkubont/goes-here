@@ -24,7 +24,13 @@ async function undoCompletion(itemId, previous) {
   }
 }
 
-export default function ItemCard({ item, onOpen }) {
+export default function ItemCard({
+  item,
+  onOpen,
+  selectMode = false,
+  selected = false,
+  onToggleSelect,
+}) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
   const overdue = !item.completed && (isOverdue(item.date) || isOverdue(item.due_date));
   const durationLabel = formatDuration(item.duration_minutes);
@@ -71,17 +77,42 @@ export default function ItemCard({ item, onOpen }) {
 
   function openDetails(e) {
     e?.stopPropagation?.();
+    if (selectMode) {
+      onToggleSelect?.(item);
+      return;
+    }
     onOpen?.(item);
+  }
+
+  function onSelectClick(e) {
+    e.stopPropagation();
+    onToggleSelect?.(item);
   }
 
   return (
     <div
       className={cn(
         "group flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-2.5 transition hover:shadow-sm",
-        item.completed && "opacity-55"
+        item.completed && "opacity-55",
+        selectMode && selected && "border-primary bg-primary/5"
       )}
     >
-      {item._recurringOccurrence ? (
+      {selectMode ? (
+        <button
+          type="button"
+          onClick={onSelectClick}
+          aria-label={selected ? "Deselect" : "Select"}
+          aria-pressed={selected}
+          className={cn(
+            "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-[6px] border transition",
+            selected
+              ? "bg-primary border-primary text-primary-foreground"
+              : "border-border hover:border-primary"
+          )}
+        >
+          {selected && <Check className="h-4 w-4" />}
+        </button>
+      ) : item._recurringOccurrence ? (
         <span title="Repeats" className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full border border-dashed border-border text-muted-foreground">
           <Repeat className="h-4 w-4" />
         </span>

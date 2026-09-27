@@ -1,5 +1,5 @@
 import React from "react";
-import { Trash2, Loader2, Save, ChevronDown, Bell, Repeat, SkipForward, Split, CalendarPlus } from "lucide-react";
+import { Trash2, Loader2, Save, ChevronDown, Bell, Repeat, SkipForward, Split, CalendarPlus, Copy } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -327,6 +327,62 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       handleOpenChange(false);
     } catch (e) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function duplicate() {
+    if (!form || !item || isDraft) return;
+    setSaving(true);
+    try {
+      const baseTitle = String(form.content || item.content || "Item").trim();
+      const title = / \(copy\)$/i.test(baseTitle) ? baseTitle : `${baseTitle} (copy)`;
+      const dateISO = form.date
+        ? new Date(`${form.date}T${form.time || "09:00"}:00`).toISOString()
+        : item.date || null;
+      const durationRaw = form.duration_minutes === "" || form.duration_minutes == null
+        ? null
+        : Number(form.duration_minutes);
+      const payload = {
+        content: title,
+        type: form.type || "todo",
+        person_name: form.person_name || null,
+        responsible_name: form.responsible_name || null,
+        project_name: form.project_name || null,
+        date: dateISO,
+        due_date: form.due_date || null,
+        time: form.time || "",
+        recurring: resolveRecurringWrite(form) || "",
+        priority: form.priority || "medium",
+        category: form.category || null,
+        amount: form.amount === "" || form.amount == null ? null : Number(form.amount),
+        budget: form.budget === "" || form.budget == null ? null : Number(form.budget),
+        store: form.store || null,
+        location: form.location || null,
+        notes: form.notes || null,
+        inbox: !!form.inbox,
+        tags: form.tags || [],
+        completed: false,
+        completed_date: null,
+        purchased: false,
+        wrapped: !!form.wrapped,
+        payment_status: form.type === "bill" ? "unpaid" : (form.payment_status || "unpaid"),
+        board_status: "backlog",
+        reminder_offset: form.reminder_offset || null,
+        duration_minutes: durationRaw != null && !Number.isNaN(durationRaw) && durationRaw > 0
+          ? Math.round(durationRaw)
+          : null,
+        duration_source: form.duration_source || null,
+        recurring_exceptions: [],
+      };
+      const created = await entities.Item.create(payload);
+      if (created) patchItemsCaches((list) => [created, ...list]);
+      await invalidateAll();
+      toast({ title: "Duplicated", description: title });
+      handleOpenChange(false);
+    } catch (e) {
+      toast({ title: "Duplicate failed", description: e.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -700,9 +756,14 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         {isDraft ? (
           <span />
         ) : (
-          <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
-            <Trash2 className="h-4 w-4 mr-1" /> Delete
-          </Button>
+          <div className="flex flex-wrap gap-1">
+            <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
+              <Trash2 className="h-4 w-4 mr-1" /> Delete
+            </Button>
+            <Button variant="ghost" onClick={duplicate} disabled={saving} className="min-h-[44px]">
+              <Copy className="h-4 w-4 mr-1" /> Duplicate
+            </Button>
+          </div>
         )}
         <div className="flex gap-2 ml-auto">
           <Button variant="outline" onClick={() => handleOpenChange(false)} className="min-h-[44px]">Cancel</Button>

@@ -7,6 +7,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useItems, ITEMS_PAGE_SIZE } from "@/lib/queries";
 import { useAuth } from "@/lib/AuthContext";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import QuickAdd from "@/components/QuickAdd";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ItemsLoadMoreBanner from "@/components/ItemsLoadMoreBanner";
@@ -74,6 +75,9 @@ export default function Layout() {
   const itemCount = (items || []).length;
   const moreActive = MORE_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
   const isShoppingMode = location.pathname === "/lists/grocery/shop";
+
+  // Multi-device sync: invalidate React Query when other family clients change data.
+  useRealtimeSync();
 
   React.useEffect(() => {
     setMoreOpen(false);

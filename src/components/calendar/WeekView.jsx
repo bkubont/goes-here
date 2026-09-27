@@ -4,7 +4,7 @@ import { formatDuration } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
 import { cn } from "@/lib/utils";
 
-/** Sunday-start to match the month grid (`getDay()` / DOW header). */
+/** Sunday-start by default; callers pass weekStartsOn from Settings preference. */
 export const WEEK_STARTS_ON = 0;
 
 export function startOfWeek(date, weekStartsOn = WEEK_STARTS_ON) {
