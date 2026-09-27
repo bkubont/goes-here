@@ -12,6 +12,7 @@ import { Link } from "react-router-dom";
 import { ITEM_TYPES, ITEM_TYPE_MAP, formatDate } from "@/lib/itemTypes";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { useDevicePerson } from "@/lib/devicePerson";
 
 const COLORS = ["#0404A9", "#CFAB59", "#555D6D", "#0505C7", "#1d4ed8", "#0A0A0A"];
 
@@ -31,6 +32,7 @@ export default function Projects() {
   const { data: projects } = useProjects();
   const { data: items } = useItems({});
   const { data: people } = usePeople();
+  const meName = useDevicePerson();
   const [selected, setSelected] = React.useState(null);
   const [adding, setAdding] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -103,6 +105,7 @@ export default function Projects() {
         content: newTitle.trim(),
         type: newType,
         project_name: proj.name,
+        responsible_name: meName || "",
         completed: false,
         board_status: "backlog",
         tags: [],

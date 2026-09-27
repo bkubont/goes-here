@@ -90,7 +90,8 @@ export function missingStapleItems(template, existingItems) {
 }
 
 /** Rows ready for entities.Item.bulkCreate. */
-export function stapleRowsToCreate(lines) {
+export function stapleRowsToCreate(lines, { responsible_name = "" } = {}) {
+  const assignee = String(responsible_name || "").trim();
   return (lines || []).map((line) => ({
     content: line.content,
     type: "grocery",
@@ -104,6 +105,7 @@ export function stapleRowsToCreate(lines) {
     tags: [],
     inbox: false,
     priority: "medium",
+    ...(assignee ? { responsible_name: assignee } : {}),
   }));
 }
 

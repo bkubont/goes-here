@@ -12,6 +12,7 @@ import { parseQuickAdd } from "@/lib/quickAdd";
 import { ITEM_TYPE_MAP, formatDate } from "@/lib/itemTypes";
 import { usePeople, useProjects, useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { applyDurationEstimate } from "@/lib/estimateDuration";
+import { useDevicePerson } from "@/lib/devicePerson";
 
 function toDateISO(dateStr, timeStr) {
   if (!dateStr) return null;
@@ -125,6 +126,7 @@ export default function QuickAdd({ open, onOpenChange }) {
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
   const { data: allItems } = useItems({});
+  const meName = useDevicePerson();
   const [text, setText] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [listening, setListening] = React.useState(false);
@@ -169,15 +171,20 @@ export default function QuickAdd({ open, onOpenChange }) {
   }
 
   async function commit(drafts) {
-    const records = toRecords(drafts, allItems || []);
+    // Default Assigned to when AI left it blank — never overwrite an explicit name.
+    const withAssignee = drafts.map((d) => ({
+      ...d,
+      responsible_name: d.responsible_name || meName || "",
+    }));
+    const records = toRecords(withAssignee, allItems || []);
     const created = await entities.Item.bulkCreate(records);
     if (Array.isArray(created) && created.length) {
       patchItemsCaches((list) => [...created, ...list]);
       lastCreatedRef.current = created.map((r) => r.id).filter(Boolean);
     }
     await invalidateAll();
-    const where = drafts.slice(0, 4).map(destinationLabel).join("\n");
-    const extra = drafts.length > 4 ? `\n+${drafts.length - 4} more` : "";
+    const where = withAssignee.slice(0, 4).map(destinationLabel).join("\n");
+    const extra = withAssignee.length > 4 ? `\n+${withAssignee.length - 4} more` : "";
     toast({
       title: `Added ${records.length} item${records.length > 1 ? "s" : ""}`,
       description: where + extra,

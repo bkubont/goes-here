@@ -9,10 +9,28 @@ import { useItems, ITEMS_PAGE_SIZE } from "@/lib/queries";
 import { useAuth } from "@/lib/AuthContext";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import QuickAdd from "@/components/QuickAdd";
+import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ItemsLoadMoreBanner from "@/components/ItemsLoadMoreBanner";
 
 // Calendar + Board are primary product surfaces; Lists/Shopping secondary.
+
+/** Blank create draft for the full Add drawer (type picker + all fields). */
+function blankCreateDraft() {
+  return {
+    _draft: true,
+    id: `draft-new-${Date.now()}`,
+    content: "",
+    type: "todo",
+    completed: false,
+    board_status: "backlog",
+    tags: [],
+    inbox: false,
+    priority: "medium",
+    responsible_name: "",
+  };
+}
+
 const DESKTOP_NAV = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
@@ -68,6 +86,7 @@ function NavItem({ to, label, icon: Icon, end }) {
 
 export default function Layout() {
   const [quickOpen, setQuickOpen] = React.useState(false);
+  const [createDraft, setCreateDraft] = React.useState(null);
   const [moreOpen, setMoreOpen] = React.useState(false);
   const { user, logout } = useAuth();
   const { data: items, hasMore, loadMore, isLoadingMore, pageSize } = useItems({});
@@ -83,6 +102,10 @@ export default function Layout() {
   React.useEffect(() => {
     setMoreOpen(false);
   }, [location.pathname]);
+
+  function openFullAdd() {
+    setCreateDraft(blankCreateDraft());
+  }
 
   // Full-screen shopping checklist — hide app chrome for focus at the store.
   if (isShoppingMode) {
@@ -109,13 +132,24 @@ export default function Layout() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setQuickOpen(true)}
-          className="mb-6 flex min-h-[44px] items-center justify-center gap-2 rounded-[6px] bg-primary px-3 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-active"
-        >
-          <Plus className="h-4 w-4" /> Quick Add
-        </button>
+        <div className="mb-6 flex items-stretch gap-1.5">
+          <button
+            type="button"
+            onClick={() => setQuickOpen(true)}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-[6px] bg-attention px-3 py-3 text-sm font-semibold text-attention-foreground shadow-sm transition hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Quick Add
+          </button>
+          <button
+            type="button"
+            onClick={openFullAdd}
+            aria-label="Add with details"
+            title="Add with details"
+            className="grid h-auto min-h-[44px] w-11 shrink-0 place-items-center rounded-[6px] bg-attention text-attention-foreground shadow-sm transition hover:opacity-90"
+          >
+            <Plus className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+        </div>
 
         <nav className="flex flex-1 flex-col gap-0.5" aria-label="Main">
           {DESKTOP_NAV.map((n) => (
@@ -164,11 +198,20 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => setQuickOpen(true)}
-              className="flex min-h-[44px] items-center gap-1.5 rounded-[6px] bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:bg-active"
+              className="flex min-h-[44px] items-center gap-1.5 rounded-[6px] bg-attention px-3.5 py-2 text-sm font-semibold text-attention-foreground shadow-sm transition hover:opacity-90"
             >
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Quick Add</span>
               <span className="sm:hidden">Add</span>
+            </button>
+            <button
+              type="button"
+              onClick={openFullAdd}
+              aria-label="Add with details"
+              title="Add with details"
+              className="grid h-11 w-11 place-items-center rounded-[6px] bg-attention text-attention-foreground shadow-sm transition hover:opacity-90"
+            >
+              <Plus className="h-5 w-5" strokeWidth={2.5} />
             </button>
             <button
               type="button"
@@ -276,6 +319,11 @@ export default function Layout() {
       </div>
 
       <QuickAdd open={quickOpen} onOpenChange={setQuickOpen} />
+      <ItemDetailDrawer
+        item={createDraft}
+        open={!!createDraft}
+        onOpenChange={(o) => !o && setCreateDraft(null)}
+      />
     </div>
   );
 }
