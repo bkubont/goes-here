@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useParams } from "react-router-dom";
-import { LayoutList, Pin, EyeOff, Eye } from "lucide-react";
+import { LayoutList, Pin, EyeOff, Eye, ShoppingCart } from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
 import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
@@ -276,7 +276,10 @@ export default function Lists() {
                 }
               >
                 {key === "grocery" ? (
-                  <GroceryView items={byType[key]} />
+                  <div className="space-y-2">
+                    <ShopModeLink compact />
+                    <GroceryView items={byType[key]} />
+                  </div>
                 ) : (
                   <ItemList items={byType[key]} />
                 )}
@@ -319,13 +322,16 @@ export default function Lists() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-8">
-      <div className="flex items-center gap-2 mb-1">
-        <Link to="/lists" className="text-sm text-muted-foreground hover:text-foreground">Lists</Link>
-        <span className="text-muted-foreground">/</span>
-        <h1 className="page-title flex items-center gap-2">
-          <span className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", TI.tone)}><TI.icon className="h-4 w-4" /></span>
-          {TI.plural || TI.label}
-        </h1>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link to="/lists" className="text-sm text-muted-foreground hover:text-foreground">Lists</Link>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="page-title flex items-center gap-2">
+            <span className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", TI.tone)}><TI.icon className="h-4 w-4" /></span>
+            {TI.plural || TI.label}
+          </h1>
+        </div>
+        {type === "grocery" && <ShopModeLink />}
       </div>
       {type === "project_item" && (
         <p className="text-xs text-muted-foreground mb-2">
@@ -356,6 +362,22 @@ export default function Lists() {
         </details>
       )}
     </div>
+  );
+}
+
+function ShopModeLink({ compact = false }) {
+  return (
+    <Button
+      asChild
+      variant={compact ? "outline" : "default"}
+      size="sm"
+      className={cn("min-h-[40px]", compact && "w-full sm:w-auto")}
+    >
+      <Link to="/lists/grocery/shop">
+        <ShoppingCart className="h-4 w-4 mr-1.5" />
+        {compact ? "Shop" : "Start shopping"}
+      </Link>
+    </Button>
   );
 }
 

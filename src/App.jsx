@@ -15,6 +15,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import Home from '@/pages/Home';
 import CalendarPage from '@/pages/CalendarPage';
 import Lists from '@/pages/Lists';
+import GroceryShop from '@/pages/GroceryShop';
 import People from '@/pages/People';
 import Projects from '@/pages/Projects';
 import SearchPage from '@/pages/SearchPage';
@@ -46,6 +47,7 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Home />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/lists" element={<Lists />} />
+          <Route path="/lists/grocery/shop" element={<GroceryShop />} />
           <Route path="/lists/:type" element={<Lists />} />
           <Route path="/board" element={<Board />} />
           <Route path="/people" element={<People />} />

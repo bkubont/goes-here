@@ -546,6 +546,14 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
                   {GROCERY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <div className="space-y-1.5 pt-1">
+                <Label>Store</Label>
+                <Input
+                  value={form.store || ""}
+                  onChange={(e) => set({ store: e.target.value })}
+                  placeholder="Optional — filters Shopping mode"
+                />
+              </div>
             </div>
           )}
 

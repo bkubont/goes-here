@@ -71,10 +71,24 @@ export default function Layout() {
   const location = useLocation();
   const inboxCount = (items || []).filter((i) => !i.completed && (i.inbox || i.type === "to_schedule")).length;
   const moreActive = MORE_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
+  const isShoppingMode = location.pathname === "/lists/grocery/shop";
 
   React.useEffect(() => {
     setMoreOpen(false);
   }, [location.pathname]);
+
+  // Full-screen shopping checklist — hide app chrome for focus at the store.
+  if (isShoppingMode) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden bg-canvas">
+        <div className="min-h-0 flex-1">
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
