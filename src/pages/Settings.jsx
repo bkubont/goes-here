@@ -132,8 +132,8 @@ export default function Settings() {
       toast({
         title: "Export downloaded",
         description: includeTrashExport
-          ? "Includes active data and trash."
-          : "Active items, people, and projects (trash excluded).",
+          ? "Includes active data, boards, and trash."
+          : "Active items, people, projects, and boards (trash excluded).",
       });
     } catch (e) {
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
@@ -154,6 +154,7 @@ export default function Settings() {
         const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 0;
         const peopleCount = Array.isArray(parsed.people) ? parsed.people.length : 0;
         const projectCount = Array.isArray(parsed.projects) ? parsed.projects.length : 0;
+        const boardCount = Array.isArray(parsed.boards) ? parsed.boards.length : 0;
         const trashCount = Array.isArray(parsed.trash) ? parsed.trash.length : 0;
         setImportConfirm({
           data: parsed,
@@ -161,6 +162,7 @@ export default function Settings() {
           itemCount,
           peopleCount,
           projectCount,
+          boardCount,
           trashCount,
         });
       } catch (err) {
@@ -620,7 +622,7 @@ export default function Settings() {
           <p className="text-sm font-medium">Backup</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Export or import a JSON backup of items, people, and projects. Family members only.
+          Export or import a JSON backup of items, people, projects, and boards. Family members only.
           Import merges and creates — it does not wipe your household.
         </p>
         <label className="flex items-center gap-2 text-sm min-h-[40px]">
@@ -883,7 +885,7 @@ export default function Settings() {
                 </p>
                 <p>
                   {importConfirm?.peopleCount ?? 0} people · {importConfirm?.projectCount ?? 0} projects ·{" "}
-                  {importConfirm?.itemCount ?? 0} items
+                  {importConfirm?.boardCount ?? 0} boards · {importConfirm?.itemCount ?? 0} items
                   {(importConfirm?.trashCount ?? 0) > 0
                     ? ` · ${importConfirm.trashCount} trash`
                     : ""}

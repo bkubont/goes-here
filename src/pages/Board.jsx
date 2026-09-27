@@ -251,7 +251,7 @@ export default function Board() {
       actual_duration_minutes: item.actual_duration_minutes ?? null,
     };
     try {
-      const patch = boardColumnPatch(column, { boardId: activeBoard.id });
+      const patch = boardColumnPatch(column, { boardId: activeBoard.id, item });
       if (column.is_done && item.duration_minutes != null && item.actual_duration_minutes == null) {
         patch.actual_duration_minutes = Number(item.duration_minutes);
       }
@@ -309,6 +309,7 @@ export default function Board() {
         const patch = boardColumnPatch(column, {
           boardId: activeBoard.id,
           swimlaneKey: swimlaneMode === "custom" ? (laneKey === "__none__" ? null : laneKey) : undefined,
+          item,
         });
         // person/project swimlanes are derived — update the source field when dragging between lanes
         if (swimlaneMode === "person") {
@@ -808,7 +809,12 @@ export default function Board() {
         renderDesktopBoard()
       )}
 
-      <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+      <ItemDetailDrawer
+        item={active}
+        open={!!active}
+        onOpenChange={(o) => !o && setActive(null)}
+        activeBoardId={activeBoard?.id || null}
+      />
 
       {/* Create board */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -995,6 +1001,8 @@ function ColumnsEditorDialog({ open, onOpenChange, board, columns, customLanes, 
       const used = new Set();
       const existingIds = new Set(columns.map((c) => c.id));
       const keptIds = new Set(draftCols.filter((c) => c.id).map((c) => c.id));
+      const oldDone = columns.find((c) => c.is_done) || null;
+      const savedCols = [];
 
       // Create / update columns
       for (let i = 0; i < draftCols.length; i += 1) {
@@ -1010,33 +1018,62 @@ function ColumnsEditorDialog({ open, onOpenChange, board, columns, customLanes, 
           board_id: board.id,
         };
         if (c.id && existingIds.has(c.id)) {
-          await entities.BoardColumn.update(c.id, payload);
+          savedCols.push(await entities.BoardColumn.update(c.id, payload));
         } else {
-          await entities.BoardColumn.create(payload);
+          savedCols.push(await entities.BoardColumn.create(payload));
         }
       }
       // Delete removed columns — cards should already be moved if deleteCol flow used;
       // for bulk save, move orphans to first remaining column.
       for (const old of columns) {
         if (!keptIds.has(old.id)) {
-          const fallback = draftCols.find((c) => c.id) || draftCols[0];
-          const fallbackId = fallback?.id;
-          const fallbackKey = fallback?.status_key;
+          const fallback = savedCols[0] || draftCols.find((c) => c.id) || draftCols[0];
           const orphans = (items || []).filter((it) => it.board_column_id === old.id);
-          if (fallbackId) {
+          if (fallback?.id) {
             await Promise.all(
               orphans.map((it) =>
-                entities.Item.update(it.id, {
-                  board_column_id: fallbackId,
-                  board_status: fallbackKey,
-                  completed: !!fallback.is_done,
-                  completed_date: fallback.is_done ? (it.completed_date || new Date().toISOString()) : null,
-                })
+                entities.Item.update(it.id, boardColumnPatch(fallback, { boardId: board.id, item: it }))
               )
             );
           }
           await entities.BoardColumn.delete(old.id);
         }
+      }
+
+      // Reconcile completed flags when the done column designation changes.
+      const newDone = savedCols.find((c) => c.is_done) || null;
+      if (newDone && (!oldDone || oldDone.id !== newDone.id)) {
+        const boardItems = (items || []).filter(
+          (it) => it.board_id === board.id || it.board_column_id
+        );
+        await Promise.all(
+          boardItems.map(async (it) => {
+            if (it.board_column_id === newDone.id && !it.completed) {
+              return entities.Item.update(it.id, {
+                completed: true,
+                completed_date: it.completed_date || new Date().toISOString(),
+                board_status: newDone.status_key,
+                board_column_id: newDone.id,
+              });
+            }
+            if (
+              oldDone
+              && it.board_column_id === oldDone.id
+              && it.completed
+              && oldDone.id !== newDone.id
+            ) {
+              const openCol = savedCols.find((c) => c.id === oldDone.id) || savedCols.find((c) => !c.is_done);
+              if (!openCol || openCol.is_done) return null;
+              return entities.Item.update(it.id, {
+                completed: false,
+                completed_date: null,
+                board_status: openCol.status_key,
+                board_column_id: openCol.id,
+              });
+            }
+            return null;
+          })
+        );
       }
 
       if (board.swimlane_mode === "custom") {
@@ -1062,6 +1099,14 @@ function ColumnsEditorDialog({ open, onOpenChange, board, columns, customLanes, 
         }
         for (const old of customLanes) {
           if (!keptLaneIds.has(old.id)) {
+            // Clear lane keys so resolveSwimlanes does not resurrect the deleted lane.
+            const laneItems = (items || []).filter(
+              (it) => it.swimlane_key === old.lane_key
+                && (!it.board_id || it.board_id === board.id)
+            );
+            await Promise.all(
+              laneItems.map((it) => entities.Item.update(it.id, { swimlane_key: null }))
+            );
             await entities.BoardSwimlane.delete(old.id);
           }
         }
@@ -1089,7 +1134,7 @@ function ColumnsEditorDialog({ open, onOpenChange, board, columns, customLanes, 
         const orphans = (items || []).filter((it) => it.board_column_id === deleteCol.id);
         await Promise.all(
           orphans.map((it) =>
-            entities.Item.update(it.id, boardColumnPatch(target, { boardId: board.id }))
+            entities.Item.update(it.id, boardColumnPatch(target, { boardId: board.id, item: it }))
           )
         );
         await entities.BoardColumn.delete(deleteCol.id);

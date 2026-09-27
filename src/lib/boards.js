@@ -102,8 +102,9 @@ export function statusKeyOf(item, columns) {
 /**
  * Patch when moving an item onto a column.
  * Keeps board_status + completed in sync with is_done.
+ * Pass `item` to preserve completed_date when already complete (no transition).
  */
-export function boardColumnPatch(column, { boardId, swimlaneKey } = {}) {
+export function boardColumnPatch(column, { boardId, swimlaneKey, item } = {}) {
   if (!column) return {};
   const patch = {
     board_column_id: column.id,
@@ -113,7 +114,12 @@ export function boardColumnPatch(column, { boardId, swimlaneKey } = {}) {
   if (swimlaneKey !== undefined) patch.swimlane_key = swimlaneKey;
   if (column.is_done) {
     patch.completed = true;
-    patch.completed_date = new Date().toISOString();
+    // Only stamp a new completed_date on transition into done.
+    if (item?.completed && item?.completed_date) {
+      patch.completed_date = item.completed_date;
+    } else {
+      patch.completed_date = new Date().toISOString();
+    }
   } else {
     patch.completed = false;
     patch.completed_date = null;
@@ -128,7 +134,10 @@ export function completionBoardPatch(item, completed, columns) {
     const done = cols.find((c) => c.is_done) || cols[cols.length - 1];
     return {
       completed: true,
-      completed_date: new Date().toISOString(),
+      completed_date:
+        item?.completed && item?.completed_date
+          ? item.completed_date
+          : new Date().toISOString(),
       board_status: done?.status_key || "done",
       board_column_id: done?.id ?? item.board_column_id ?? null,
       actual_duration_minutes:
