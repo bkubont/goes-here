@@ -8,6 +8,7 @@ import { expandRecurring, exceptionSet, formatRecurrenceSummary } from "@/lib/re
 import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
+import WeekView, { startOfWeek, endOfWeek, weekDays } from "@/components/calendar/WeekView";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/durationDefaults";
@@ -54,9 +55,11 @@ export default function CalendarPage() {
     ? "month"
     : viewParam === "day"
       ? "day"
-      : viewParam === "agenda"
-        ? "agenda"
-        : (isMobile ? "agenda" : "day");
+      : viewParam === "week"
+        ? "week"
+        : viewParam === "agenda"
+          ? "agenda"
+          : (isMobile ? "agenda" : "day");
   const showUnscheduled = tabParam === "unscheduled" || (!isMobile && view === "day");
 
   const [cursor, setCursor] = React.useState(() => {
@@ -79,12 +82,21 @@ export default function CalendarPage() {
 
   const rangeStart = view === "month"
     ? new Date(year, month, 1)
-    : (() => { const d = new Date(selected); d.setHours(0, 0, 0, 0); return d; })();
-  const rangeEnd = view === "month" || view === "agenda"
-    ? (view === "agenda"
+    : view === "week"
+      ? startOfWeek(selected)
+      : (() => { const d = new Date(selected); d.setHours(0, 0, 0, 0); return d; })();
+  const rangeEnd = view === "month"
+    ? new Date(year, month, daysInMonth)
+    : view === "agenda"
       ? (() => { const d = new Date(selected); d.setDate(d.getDate() + 13); d.setHours(23, 59, 59, 999); return d; })()
-      : new Date(year, month, daysInMonth))
-    : (() => { const d = new Date(selected); d.setHours(23, 59, 59, 999); return d; })();
+      : view === "week"
+        ? endOfWeek(selected)
+        : (() => { const d = new Date(selected); d.setHours(23, 59, 59, 999); return d; })();
+
+  const weekDayList = React.useMemo(
+    () => (view === "week" ? weekDays(selected) : []),
+    [view, selected.getTime()]
+  );
 
   const byDay = React.useMemo(() => {
     const map = {};
@@ -143,8 +155,30 @@ export default function CalendarPage() {
     const next = new URLSearchParams(searchParams);
     if (v === "day" && !isMobile) next.delete("view");
     else next.set("view", v);
-    if (v !== "day") next.delete("tab");
+    // Keep Unscheduled tab only on day / week / agenda (mobile Schedule|Unscheduled).
+    if (v !== "day" && v !== "week" && v !== "agenda") next.delete("tab");
     setSearchParams(next, { replace: true });
+  }
+
+  function navStep() {
+    if (view === "agenda" || view === "week") return 7;
+    return 1;
+  }
+
+  function weekTitle() {
+    if (!weekDayList.length) return "Week";
+    const a = weekDayList[0];
+    const b = weekDayList[6];
+    const left = a.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+    const sameYear = a.getFullYear() === b.getFullYear();
+    const right = b.toLocaleDateString(undefined, sameMonth
+      ? { day: "numeric" }
+      : sameYear
+        ? { month: "short", day: "numeric" }
+        : { month: "short", day: "numeric", year: "numeric" });
+    const yearSuffix = sameYear ? `, ${a.getFullYear()}` : "";
+    return `${left} – ${right}${yearSuffix}`;
   }
 
   function setTab(tab) {
@@ -214,11 +248,18 @@ export default function CalendarPage() {
               ? selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
               : view === "agenda"
                 ? "Agenda"
-                : cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                : view === "week"
+                  ? weekTitle()
+                  : cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
           </h1>
           {view === "day" && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Plan the day — drag or use Schedule without dragging.
+            </p>
+          )}
+          {view === "week" && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Sun–Sat week · tap a day to open the day grid
             </p>
           )}
         </div>
@@ -266,6 +307,13 @@ export default function CalendarPage() {
             </button>
             <button
               type="button"
+              onClick={() => setView("week")}
+              className={cn("rounded-[4px] px-3 min-h-[40px] text-sm", view === "week" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
+            >
+              Week
+            </button>
+            <button
+              type="button"
               onClick={() => setView("month")}
               className={cn("rounded-[4px] px-3 min-h-[40px] text-sm", view === "month" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
             >
@@ -275,7 +323,7 @@ export default function CalendarPage() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => (view === "month" ? setCursor(new Date(year, month - 1, 1)) : shiftDay(view === "agenda" ? -7 : -1))}
+              onClick={() => (view === "month" ? setCursor(new Date(year, month - 1, 1)) : shiftDay(-navStep()))}
               className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
               aria-label="Previous"
             >
@@ -294,7 +342,7 @@ export default function CalendarPage() {
             </button>
             <button
               type="button"
-              onClick={() => (view === "month" ? setCursor(new Date(year, month + 1, 1)) : shiftDay(view === "agenda" ? 7 : 1))}
+              onClick={() => (view === "month" ? setCursor(new Date(year, month + 1, 1)) : shiftDay(navStep()))}
               className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
               aria-label="Next"
             >
@@ -305,7 +353,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Mobile tabs: Schedule | Unscheduled */}
-      {(view === "day" || view === "agenda") && isMobile && (
+      {(view === "day" || view === "agenda" || view === "week") && isMobile && (
         <div className="flex gap-1 mb-4 rounded-[6px] border border-border bg-card p-0.5">
           <button
             type="button"
@@ -369,6 +417,37 @@ export default function CalendarPage() {
       )}
 
       {view === "agenda" && tabParam === "unscheduled" && (
+        <UnscheduledList items={poolItems} onOpen={setActive} onSchedule={openSchedule} />
+      )}
+
+      {view === "week" && tabParam !== "unscheduled" && (
+        <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
+          <WeekView
+            days={weekDayList}
+            byDay={byDay}
+            allItems={all}
+            todayKey={todayKey}
+            isMobile={isMobile}
+            onSelectDay={(d) => { setSelected(d); setView("day"); }}
+            onOpenItem={setActive}
+          />
+          {!isMobile && (
+            <div className="space-y-3">
+              <UnscheduledPool
+                items={poolItems}
+                allItems={all}
+                selectedId={poolSelected}
+                onSelect={setPoolSelected}
+                onOpenItem={setActive}
+                isMobile={false}
+              />
+              <UnscheduledList items={poolItems.slice(0, 8)} onOpen={setActive} onSchedule={openSchedule} compact />
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === "week" && tabParam === "unscheduled" && (
         <UnscheduledList items={poolItems} onOpen={setActive} onSchedule={openSchedule} />
       )}
 
