@@ -1,13 +1,16 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell,
+  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift,
 } from "lucide-react";
-import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
+import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import {
   ITEM_TYPE_MAP, PINNED_LIST_KEYS, isToday, isUpcoming, isOverdue, parseDay, toDayKey,
 } from "@/lib/itemTypes";
+import {
+  upcomingBirthdays, formatBirthdayCountdown, formatBirthdayShort,
+} from "@/lib/birthdays";
 import { expandRecurring, exceptionSet } from "@/lib/recurring";
 import { dueReminders } from "@/lib/reminders";
 import ItemList from "@/components/ItemList";
@@ -64,8 +67,12 @@ function DueRemindersBlock({ items, onDismiss }) {
 
 export default function Home() {
   const { data: items } = useItems({});
+  const { data: people } = usePeople();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [giftDraft, setGiftDraft] = React.useState(null);
   const all = items || [];
+  const birthdaysSoon = upcomingBirthdays(people || [], 30);
 
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
@@ -158,6 +165,22 @@ export default function Home() {
     }
   }
 
+  function openGiftDraft(personName) {
+    setGiftDraft({
+      _draft: true,
+      id: `draft-gift-${personName}`,
+      content: "",
+      type: "gift",
+      person_name: personName,
+      completed: false,
+      board_status: "backlog",
+      tags: [],
+      inbox: false,
+      wrapped: false,
+      priority: "medium",
+    });
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8 space-y-8">
       <header>
@@ -191,6 +214,70 @@ export default function Home() {
               );
             })}
           </div>
+        </section>
+      )}
+
+      {birthdaysSoon.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-heading text-base font-semibold flex items-center gap-2">
+              <Gift className="h-4 w-4 text-primary" /> Upcoming birthdays
+            </h2>
+            <Link to="/lists/gift" className="text-sm text-primary flex items-center gap-1 hover:underline min-h-[44px]">
+              Gifts <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {birthdaysSoon.map(({ person, nextDate, daysUntil }) => {
+              const giftCount = all.filter(
+                (i) => i.type === "gift" && !i.completed && i.person_name === person.name
+              ).length;
+              return (
+                <div
+                  key={person.id}
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-3"
+                >
+                  <span
+                    className="grid h-10 w-10 place-items-center rounded-full text-white text-sm font-semibold shrink-0"
+                    style={{ background: person.color || "#0404A9" }}
+                  >
+                    {person.name?.[0]}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{person.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatBirthdayShort(nextDate)} · {formatBirthdayCountdown(daysUntil)}
+                      {giftCount > 0 ? ` · ${giftCount} gift${giftCount !== 1 ? "s" : ""}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="min-h-[40px]"
+                      onClick={() => navigate(`/lists/gift?person=${encodeURIComponent(person.name)}`)}
+                    >
+                      View gifts
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-[40px]"
+                      onClick={() => openGiftDraft(person.name)}
+                    >
+                      Add gift
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <ItemDetailDrawer
+            item={giftDraft}
+            open={!!giftDraft}
+            onOpenChange={(o) => !o && setGiftDraft(null)}
+          />
         </section>
       )}
 

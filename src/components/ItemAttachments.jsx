@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  Paperclip, Upload, Loader2, Trash2, ExternalLink, FileText, Image as ImageIcon,
+  Paperclip, Upload, Loader2, Trash2, ExternalLink, FileText, Image as ImageIcon, Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import {
   MAX_ATTACHMENTS_PER_ITEM,
   isAllowedAttachment,
 } from "@/lib/attachments";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 function FileGlyph({ mime }) {
@@ -24,13 +25,17 @@ function FileGlyph({ mime }) {
 
 /**
  * Attachments section for ItemDetailDrawer — upload, list, open, delete.
+ * On mobile: separate Take photo (capture=environment) and Choose file actions.
  */
 export default function ItemAttachments({ itemId, disabled }) {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const { data: rows, isLoading } = useAttachments(itemId);
   const [busy, setBusy] = React.useState(false);
-  const inputRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  const cameraRef = React.useRef(null);
   const list = rows || [];
+  const atCap = list.length >= MAX_ATTACHMENTS_PER_ITEM;
 
   async function onPick(e) {
     const file = e.target.files?.[0];
@@ -151,24 +156,62 @@ export default function ItemAttachments({ itemId, disabled }) {
         </ul>
       )}
 
+      {/* Desktop / library picker */}
       <input
-        ref={inputRef}
+        ref={fileRef}
         type="file"
         accept="image/*,application/pdf"
         className="hidden"
         onChange={onPick}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={cn("min-h-[40px] w-full")}
-        disabled={busy || disabled || list.length >= MAX_ATTACHMENTS_PER_ITEM}
-        onClick={() => inputRef.current?.click()}
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Upload className="h-4 w-4 mr-1" />}
-        Add file
-      </Button>
+      {/* Mobile camera — capture prefers rear camera when supported */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={onPick}
+      />
+
+      {isMobile ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn("min-h-[44px]")}
+            disabled={busy || disabled || atCap}
+            onClick={() => cameraRef.current?.click()}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Camera className="h-4 w-4 mr-1" />}
+            Take photo
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn("min-h-[44px]")}
+            disabled={busy || disabled || atCap}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-4 w-4 mr-1" />
+            Choose file
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn("min-h-[40px] w-full")}
+          disabled={busy || disabled || atCap}
+          onClick={() => fileRef.current?.click()}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Upload className="h-4 w-4 mr-1" />}
+          Add file
+        </Button>
+      )}
     </div>
   );
 }

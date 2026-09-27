@@ -1,13 +1,15 @@
 import React from "react";
-import { Link, useParams } from "react-router-dom";
-import { LayoutList, Pin, EyeOff, Eye, ShoppingCart } from "lucide-react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { LayoutList, Pin, EyeOff, Eye, ShoppingCart, Plus } from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
 import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
+import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import CollapsibleListSection from "@/components/CollapsibleListSection";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
+import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
 
 const HIDDEN_KEY = "goeshere.lists.hidden";
 
@@ -109,14 +111,29 @@ function applyPeopleFilters(items, person, responsible) {
 
 export default function Lists() {
   const { type } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: items } = useItems({});
   const { data: people } = usePeople();
   const all = items || [];
   const [hidden, setHidden] = React.useState(loadHidden);
   const [showHidden, setShowHidden] = React.useState(false);
+  const [giftDraft, setGiftDraft] = React.useState(null);
   const saved = React.useMemo(() => loadListsFilters(), []);
-  const [filterPerson, setFilterPerson] = React.useState(saved.person || "all");
+  const personFromUrl = searchParams.get("person");
+  const [filterPerson, setFilterPerson] = React.useState(personFromUrl || saved.person || "all");
   const [filterResponsible, setFilterResponsible] = React.useState(saved.responsible || "all");
+
+  React.useEffect(() => {
+    if (personFromUrl) setFilterPerson(personFromUrl);
+  }, [personFromUrl]);
+
+  function setPersonFilter(value) {
+    setFilterPerson(value);
+    const next = new URLSearchParams(searchParams);
+    if (value && value !== "all") next.set("person", value);
+    else next.delete("person");
+    setSearchParams(next, { replace: true });
+  }
 
   const peopleNames = React.useMemo(() => {
     const s = new Set();
@@ -254,7 +271,7 @@ export default function Lists() {
         <ListsFilterBar
           person={filterPerson}
           responsible={filterResponsible}
-          onPerson={setFilterPerson}
+          onPerson={setPersonFilter}
           onResponsible={setFilterResponsible}
           peopleNames={peopleNames}
         />
@@ -319,6 +336,28 @@ export default function Lists() {
   const list = applyPeopleFilters(all.filter((i) => i.type === type).sort(sortItems), filterPerson, filterResponsible);
   const active = list.filter((i) => !i.completed);
   const done = list.filter((i) => i.completed);
+  const giftRollup = type === "gift"
+    ? giftBudgetRollup(
+      active,
+      filterPerson !== "all" ? filterPerson : null
+    )
+    : null;
+
+  function openGiftDraft() {
+    setGiftDraft({
+      _draft: true,
+      id: `draft-gift-${filterPerson || "new"}`,
+      content: "",
+      type: "gift",
+      person_name: filterPerson !== "all" ? filterPerson : "",
+      completed: false,
+      board_status: "backlog",
+      tags: [],
+      inbox: false,
+      wrapped: false,
+      priority: "medium",
+    });
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-8">
@@ -331,7 +370,14 @@ export default function Lists() {
             {TI.plural || TI.label}
           </h1>
         </div>
-        {type === "grocery" && <ShopModeLink />}
+        <div className="flex flex-wrap gap-2">
+          {type === "grocery" && <ShopModeLink />}
+          {type === "gift" && (
+            <Button type="button" size="sm" className="min-h-[40px]" onClick={openGiftDraft}>
+              <Plus className="h-4 w-4 mr-1" /> Add gift
+            </Button>
+          )}
+        </div>
       </div>
       {type === "project_item" && (
         <p className="text-xs text-muted-foreground mb-2">
@@ -339,12 +385,25 @@ export default function Lists() {
           <Link to="/projects" className="text-primary hover:underline">Projects</Link>.
         </p>
       )}
-      <p className="text-sm text-muted-foreground mb-3">{active.length} active · {done.length} done</p>
+      <p className="text-sm text-muted-foreground mb-1">{active.length} active · {done.length} done</p>
+      {giftRollup && (giftRollup.budgetTotal != null || giftRollup.spentTotal != null) ? (
+        <p className="text-sm text-muted-foreground mb-3">
+          {giftRollup.budgetTotal != null && <span>Budget {formatMoney(giftRollup.budgetTotal)}</span>}
+          {giftRollup.budgetTotal != null && giftRollup.spentTotal != null && <span> · </span>}
+          {giftRollup.spentTotal != null && <span>Spent {formatMoney(giftRollup.spentTotal)}</span>}
+          {giftRollup.budgetTotal != null && giftRollup.spentTotal != null && (
+            <span> · Left {formatMoney(giftRollup.remaining)}</span>
+          )}
+          {filterPerson !== "all" ? ` for ${filterPerson}` : " (open gifts)"}
+        </p>
+      ) : (
+        <div className="mb-3" />
+      )}
       <TypePicker active={type} />
       <ListsFilterBar
         person={filterPerson}
         responsible={filterResponsible}
-        onPerson={setFilterPerson}
+        onPerson={setPersonFilter}
         onResponsible={setFilterResponsible}
         peopleNames={peopleNames}
       />
@@ -361,6 +420,12 @@ export default function Lists() {
           <ItemList items={done} />
         </details>
       )}
+
+      <ItemDetailDrawer
+        item={giftDraft}
+        open={!!giftDraft}
+        onOpenChange={(o) => !o && setGiftDraft(null)}
+      />
     </div>
   );
 }
