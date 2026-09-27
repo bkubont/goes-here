@@ -1,5 +1,5 @@
 import React from "react";
-import { Trash2, Loader2, Save, ChevronDown } from "lucide-react";
+import { Trash2, Loader2, Save, ChevronDown, Bell, Repeat, SkipForward, Split } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -17,12 +17,22 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import {
-  ITEM_TYPES, GROCERY_CATEGORIES, RECURRING_PRESETS, parseDay, toDayKey,
+  ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey,
 } from "@/lib/itemTypes";
 import { completionPatch } from "@/lib/estimateDuration";
 import { invalidateAll, usePeople, useProjects } from "@/lib/queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import {
+  RECURRENCE_CHOICES,
+  formatRecurrenceSummary,
+  formatNextOccurrence,
+  recurrencePresetValue,
+  weeklyStringForDate,
+  withSkippedDay,
+  oneOffFromOccurrence,
+} from "@/lib/recurring";
+import { REMINDER_OPTIONS, formatReminderState } from "@/lib/reminders";
 
 function buildForm(item) {
   if (!item) return null;
@@ -34,6 +44,8 @@ function buildForm(item) {
     time: item.time || (d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : ""),
     duration_minutes: item.duration_minutes ?? "",
     board_status: item.board_status || (item.completed ? "done" : "backlog"),
+    reminder_offset: item.reminder_offset || "",
+    recurring_exceptions: item.recurring_exceptions || [],
   };
 }
 
@@ -41,6 +53,16 @@ function completionLabel(type) {
   if (type === "grocery" || type === "shopping") return "Purchased";
   if (type === "bill") return "Paid";
   return "Completed";
+}
+
+function resolveRecurringWrite(form) {
+  const raw = form.recurring || "";
+  if (!raw) return "";
+  // When user picks "weekly", store weekday-specific string from scheduled date.
+  if (raw === "weekly" && form.date) {
+    return weeklyStringForDate(form.date);
+  }
+  return raw;
 }
 
 export default function ItemDetailDrawer({ item, open, onOpenChange }) {
@@ -57,10 +79,9 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   React.useEffect(() => {
     if (open && item) {
       setForm(buildForm(item));
-      setMoreOpen(false);
+      setMoreOpen(!!item.recurring || !!item.reminder_offset || !!item.notes);
     }
     if (!open) {
-      // Clear after close animation so Cancel never reads a null item with stale form.
       const t = setTimeout(() => setForm(null), 200);
       return () => clearTimeout(t);
     }
@@ -71,7 +92,6 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
     else onOpenChange?.(true);
   }, [onOpenChange]);
 
-  // Guard: never access item fields when closed or item cleared (Cancel / X / Escape).
   if (!open || !item || !form) {
     return isMobile ? (
       <Sheet open={false} onOpenChange={handleOpenChange} />
@@ -82,11 +102,57 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
 
   const set = (patch) => setForm((f) => (f ? { ...f, ...patch } : f));
   const recordId = item._originalId || item.id;
+  const isVirtual = !!item._recurringOccurrence;
+  const recurringText = resolveRecurringWrite(form);
+  const summary = form.recurring
+    ? formatRecurrenceSummary(recurringText || form.recurring, form.date || item.date)
+    : "";
+  const nextLabel = form.recurring
+    ? formatNextOccurrence({
+      ...item,
+      ...form,
+      recurring: recurringText || form.recurring,
+      date: form.date
+        ? new Date(`${form.date}T${form.time || "09:00"}:00`).toISOString()
+        : item.date,
+    })
+    : null;
 
-  async function save() {
+  const preset = recurrencePresetValue(form.recurring || "");
+
+  async function save({ series = true } = {}) {
     if (!form || !item) return;
     setSaving(true);
     try {
+      if (isVirtual && !series) {
+        const skip = withSkippedDay(item);
+        await entities.Item.update(recordId, { recurring_exceptions: skip.recurring_exceptions });
+        const oneOff = oneOffFromOccurrence(item, {
+          content: form.content,
+          type: form.type,
+          person_name: form.person_name,
+          responsible_name: form.responsible_name,
+          project_name: form.project_name,
+          due_date: form.due_date || null,
+          priority: form.priority,
+          category: form.category,
+          notes: form.notes,
+          reminder_offset: form.reminder_offset || null,
+          board_status: form.board_status || "backlog",
+          duration_minutes: form.duration_minutes === "" || form.duration_minutes == null
+            ? null
+            : Number(form.duration_minutes),
+        });
+        await entities.Item.create(oneOff);
+        await invalidateAll();
+        toast({
+          title: "Saved this occurrence only",
+          description: "The rest of the series is unchanged.",
+        });
+        handleOpenChange(false);
+        return;
+      }
+
       const dateISO = form.date
         ? new Date(`${form.date}T${form.time || "09:00"}:00`).toISOString()
         : null;
@@ -105,7 +171,7 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         date: dateISO,
         due_date: form.due_date || null,
         time: form.time || "",
-        recurring: form.recurring,
+        recurring: resolveRecurringWrite(form),
         priority: form.priority,
         category: form.category,
         amount: form.amount === "" || form.amount == null ? null : Number(form.amount),
@@ -118,6 +184,7 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         wrapped: !!form.wrapped,
         payment_status: form.payment_status,
         board_status: form.board_status || "backlog",
+        reminder_offset: form.reminder_offset || null,
       };
       if (durationRaw != null && !Number.isNaN(durationRaw) && durationRaw > 0) {
         payload.duration_minutes = Math.round(durationRaw);
@@ -135,8 +202,15 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
       }
       await entities.Item.update(recordId, payload);
-      invalidateAll();
-      toast({ title: "Updated" });
+      await invalidateAll();
+      if (item.recurring || payload.recurring) {
+        toast({
+          title: "Series updated",
+          description: "Edits apply to every repeat unless you choose This occurrence only.",
+        });
+      } else {
+        toast({ title: "Updated" });
+      }
       handleOpenChange(false);
     } catch (e) {
       toast({ title: "Update failed", description: e.message, variant: "destructive" });
@@ -145,13 +219,31 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
     }
   }
 
+  async function skipThisOne() {
+    if (!isVirtual) return;
+    setSaving(true);
+    try {
+      const skip = withSkippedDay(item);
+      await entities.Item.update(recordId, { recurring_exceptions: skip.recurring_exceptions });
+      await invalidateAll();
+      toast({ title: "Skipped this occurrence", description: "Other repeats stay on the calendar." });
+      handleOpenChange(false);
+    } catch (e) {
+      toast({ title: "Could not skip", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function remove() {
     if (!item) return;
-    if (!confirm(item.recurring ? "Delete this repeating item and all its repeats?" : "Delete this item?")) return;
+    if (!confirm(item.recurring || isVirtual
+      ? "Delete this repeating item and all its repeats?"
+      : "Delete this item?")) return;
     setSaving(true);
     try {
       await entities.Item.delete(recordId);
-      invalidateAll();
+      await invalidateAll();
       handleOpenChange(false);
     } catch (e) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });
@@ -164,12 +256,10 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const isBill = form.type === "bill";
   const isGift = form.type === "gift";
   const doneLabel = completionLabel(form.type);
-  const recurringRaw = form.recurring || "";
-  const recurringValue = !recurringRaw
-    ? "none"
-    : RECURRING_PRESETS.some((p) => p.value === recurringRaw)
-      ? recurringRaw
-      : "__custom__";
+  const reminderState = formatReminderState({
+    ...form,
+    date: form.date ? `${form.date}T${form.time || "09:00"}:00` : null,
+  });
 
   const fields = (
     <div className="space-y-4 pb-4">
@@ -317,32 +407,75 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
             <p className="text-[11px] text-muted-foreground">Links to a Project destination, not the “Project item” list type.</p>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Repeats</Label>
+          <div className="space-y-2 rounded-[6px] border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-2">
+              <Repeat className="h-4 w-4 text-muted-foreground" />
+              <Label className="mb-0">Repeats</Label>
+            </div>
             <Select
-              value={recurringValue}
+              value={preset === "__weekday__" ? "weekly" : preset === "none" ? "none" : preset}
               onValueChange={(v) => {
                 if (v === "none") set({ recurring: "" });
-                else if (v === "__custom__") set({ recurring: form.recurring || "custom" });
+                else if (v === "__custom__") set({ recurring: form.recurring && preset === "__custom__" ? form.recurring : "every 3 days" });
+                else if (v === "weekly" && form.date) set({ recurring: weeklyStringForDate(form.date) });
                 else set({ recurring: v });
               }}
             >
               <SelectTrigger><SelectValue placeholder="Does not repeat" /></SelectTrigger>
               <SelectContent>
-                {RECURRING_PRESETS.map((p) => (
+                {RECURRENCE_CHOICES.map((p) => (
                   <SelectItem key={p.value || "none"} value={p.value || "none"}>{p.label}</SelectItem>
                 ))}
                 <SelectItem value="__custom__">Custom…</SelectItem>
               </SelectContent>
             </Select>
-            {recurringValue === "__custom__" && (
+            {(preset === "__custom__" || preset === "__weekday__") && (
               <Input
-                className="mt-2"
                 value={form.recurring || ""}
                 onChange={(e) => set({ recurring: e.target.value })}
-                placeholder="e.g. every Tuesday"
+                placeholder="e.g. every Tuesday, every 3 months"
               />
             )}
+            {form.recurring && (
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <p className="font-medium text-foreground/80">{summary || form.recurring}</p>
+                {nextLabel && <p>Next: {nextLabel}</p>}
+              </div>
+            )}
+            {isVirtual && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" className="min-h-[40px]" onClick={skipThisOne} disabled={saving}>
+                  <SkipForward className="h-3.5 w-3.5 mr-1" /> Skip this one
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="min-h-[40px]" onClick={() => save({ series: false })} disabled={saving}>
+                  <Split className="h-3.5 w-3.5 mr-1" /> Edit this occurrence only
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 rounded-[6px] border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-2">
+              <Bell className="h-4 w-4 text-muted-foreground" />
+              <Label className="mb-0">Reminder</Label>
+            </div>
+            <Select
+              value={form.reminder_offset || "none"}
+              onValueChange={(v) => set({ reminder_offset: v === "none" ? "" : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="No reminder" /></SelectTrigger>
+              <SelectContent>
+                {REMINDER_OPTIONS.map((o) => (
+                  <SelectItem key={o.value || "none"} value={o.value || "none"}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {reminderState && (
+              <p className="text-xs text-muted-foreground">{reminderState}</p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Shown in Due reminders on Home and Inbox. No push or email yet.
+            </p>
           </div>
 
           {isGrocery && (
@@ -411,17 +544,34 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   );
 
   const footer = (
-    <div className="flex w-full items-center justify-between gap-2">
-      <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
-        <Trash2 className="h-4 w-4 mr-1" /> Delete
-      </Button>
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={() => handleOpenChange(false)} className="min-h-[44px]">Cancel</Button>
-        <Button onClick={save} disabled={saving} className="min-h-[44px]">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Save
+    <div className="flex w-full flex-col gap-2">
+      {isVirtual && (
+        <p className="text-[11px] text-muted-foreground">
+          Save updates the whole series. Use “Edit this occurrence only” under Repeats to detach this day.
+        </p>
+      )}
+      <div className="flex w-full items-center justify-between gap-2">
+        <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
+          <Trash2 className="h-4 w-4 mr-1" /> Delete
         </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => handleOpenChange(false)} className="min-h-[44px]">Cancel</Button>
+          <Button onClick={() => save({ series: true })} disabled={saving} className="min-h-[44px]">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Save
+          </Button>
+        </div>
       </div>
     </div>
+  );
+
+  const seriesNote = (item.recurring || isVirtual) && (
+    <p className="text-xs text-muted-foreground">
+      {summary ? `${summary}.` : `Repeats ${item.recurring}.`}{" "}
+      {isVirtual
+        ? "You are viewing one occurrence."
+        : "Changes apply to every repeat unless you edit one occurrence only."}
+      {nextLabel ? ` Next: ${nextLabel}.` : ""}
+    </p>
   );
 
   if (isMobile) {
@@ -431,9 +581,7 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
           <SheetHeader className="border-b border-border px-4 py-3 text-left">
             <SheetTitle className="font-heading text-lg">Edit item</SheetTitle>
             <SheetDescription className="sr-only">Edit item details</SheetDescription>
-            {item.recurring && (
-              <p className="text-xs text-muted-foreground">Repeats {item.recurring}. Changes apply to every repeat.</p>
-            )}
+            {seriesNote}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-4 py-3 scrollbar-thin">{fields}</div>
           <SheetFooter className="sticky bottom-0 border-t border-border bg-card px-4 py-3">
@@ -450,9 +598,7 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle className="font-heading text-lg">Edit item</DialogTitle>
           <DialogDescription className="sr-only">Edit item details</DialogDescription>
-          {item.recurring && (
-            <p className="text-xs text-muted-foreground">Repeats {item.recurring}. Changes apply to every repeat.</p>
-          )}
+          {seriesNote}
         </DialogHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">{fields}</div>
         <DialogFooter className="sticky bottom-0 border-t border-border bg-card px-6 py-3 sm:justify-between">

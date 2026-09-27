@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatTime, toDayKey, formatDate } from "@/lib/itemTypes";
-import { expandRecurring } from "@/lib/recurring";
+import { expandRecurring, exceptionSet, formatRecurrenceSummary } from "@/lib/recurring";
 import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
@@ -91,6 +91,8 @@ export default function CalendarPage() {
     [...all, ...expanded].forEach((it) => {
       const k = toDayKey(it.date);
       if (!k) return;
+      // Hide series master (or any dated item) on skipped exception days.
+      if (!it._recurringOccurrence && exceptionSet(it).has(k)) return;
       (map[k] = map[k] || []).push(it);
     });
     return map;
@@ -479,7 +481,7 @@ export default function CalendarPage() {
                       {it.responsible_name && <p className="text-[11px] text-muted-foreground mt-0.5">{it.responsible_name}</p>}
                       {it.recurring && (
                         <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                          <Repeat className="h-3 w-3" /> {it.recurring}
+                          <Repeat className="h-3 w-3" /> {formatRecurrenceSummary(it.recurring, it._originalDate || it.date) || it.recurring}
                         </p>
                       )}
                     </button>

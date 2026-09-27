@@ -1,11 +1,12 @@
 import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { LayoutList, Pin, EyeOff, Eye } from "lucide-react";
-import { useItems } from "@/lib/queries";
+import { useItems, usePeople } from "@/lib/queries";
 import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
 
 const HIDDEN_KEY = "goeshere.lists.hidden";
 
@@ -31,7 +32,7 @@ function sortItems(a, b) {
 
 function TypePicker({ active }) {
   return (
-    <div className="flex flex-wrap gap-1.5 mb-5">
+    <div className="flex flex-wrap gap-1.5 mb-3">
       <Link
         to="/lists/all"
         className={cn(
@@ -61,12 +62,78 @@ function TypePicker({ active }) {
   );
 }
 
+function ListsFilterBar({ person, responsible, onPerson, onResponsible, peopleNames }) {
+  return (
+    <div className="mb-4 space-y-1.5">
+      <div className="flex flex-wrap gap-2">
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground/80">Assigned to</span>
+          <select
+            value={responsible}
+            onChange={(e) => onResponsible(e.target.value)}
+            className="h-10 min-h-[40px] rounded-[6px] border border-border bg-card px-2 text-xs text-foreground"
+          >
+            <option value="all">All</option>
+            {peopleNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground/80">About</span>
+          <select
+            value={person}
+            onChange={(e) => onPerson(e.target.value)}
+            className="h-10 min-h-[40px] rounded-[6px] border border-border bg-card px-2 text-xs text-foreground"
+          >
+            <option value="all">All people</option>
+            {peopleNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{SAVED_FILTERS_HINT} (type, person, assigned).</p>
+    </div>
+  );
+}
+
+function applyPeopleFilters(items, person, responsible) {
+  return items.filter((it) => {
+    if (responsible !== "all" && it.responsible_name !== responsible) return false;
+    if (person !== "all" && it.person_name !== person) return false;
+    return true;
+  });
+}
+
 export default function Lists() {
   const { type } = useParams();
   const { data: items } = useItems({});
+  const { data: people } = usePeople();
   const all = items || [];
   const [hidden, setHidden] = React.useState(loadHidden);
   const [showHidden, setShowHidden] = React.useState(false);
+  const saved = React.useMemo(() => loadListsFilters(), []);
+  const [filterPerson, setFilterPerson] = React.useState(saved.person || "all");
+  const [filterResponsible, setFilterResponsible] = React.useState(saved.responsible || "all");
+
+  const peopleNames = React.useMemo(() => {
+    const s = new Set();
+    (people || []).forEach((p) => s.add(p.name));
+    all.forEach((it) => {
+      if (it.responsible_name) s.add(it.responsible_name);
+      if (it.person_name) s.add(it.person_name);
+    });
+    return [...s].sort();
+  }, [people, all]);
+
+  React.useEffect(() => {
+    saveListsFilters({
+      type: type || "all",
+      person: filterPerson,
+      responsible: filterResponsible,
+    });
+  }, [type, filterPerson, filterResponsible]);
 
   function toggleHidden(key) {
     setHidden((prev) => {
@@ -158,7 +225,7 @@ export default function Lists() {
   }
 
   if (type === "all") {
-    const sorted = [...all].sort(sortItems);
+    const sorted = applyPeopleFilters([...all].sort(sortItems), filterPerson, filterResponsible);
     const active = sorted.filter((i) => !i.completed);
     const done = sorted.filter((i) => i.completed);
     const byType = {};
@@ -183,6 +250,13 @@ export default function Lists() {
         </div>
         <p className="text-sm text-muted-foreground mb-3">{active.length} active · {done.length} done</p>
         <TypePicker active="all" />
+        <ListsFilterBar
+          person={filterPerson}
+          responsible={filterResponsible}
+          onPerson={setFilterPerson}
+          onResponsible={setFilterResponsible}
+          peopleNames={peopleNames}
+        />
 
         <div className="space-y-6">
           {typeOrder.map((key) => {
@@ -227,7 +301,7 @@ export default function Lists() {
   const TI = ITEM_TYPE_MAP[type];
   if (!TI) return <div className="p-8 text-center text-muted-foreground">Unknown list.</div>;
 
-  const list = all.filter((i) => i.type === type).sort(sortItems);
+  const list = applyPeopleFilters(all.filter((i) => i.type === type).sort(sortItems), filterPerson, filterResponsible);
   const active = list.filter((i) => !i.completed);
   const done = list.filter((i) => i.completed);
 
@@ -249,6 +323,13 @@ export default function Lists() {
       )}
       <p className="text-sm text-muted-foreground mb-3">{active.length} active · {done.length} done</p>
       <TypePicker active={type} />
+      <ListsFilterBar
+        person={filterPerson}
+        responsible={filterResponsible}
+        onPerson={setFilterPerson}
+        onResponsible={setFilterResponsible}
+        peopleNames={peopleNames}
+      />
 
       {type === "grocery" ? (
         <GroceryView items={active} />
