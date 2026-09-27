@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
-  RotateCcw, Trash2, Paperclip, Plus, Loader2,
+  RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, CalendarRange,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -19,6 +19,8 @@ import { formatDate } from "@/lib/itemTypes";
 import { cn } from "@/lib/utils";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { supabase } from "@/api/supabaseClient";
+import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
+import { buildHouseholdExport, downloadJson } from "@/lib/exportHousehold";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +51,9 @@ export default function Settings() {
       return "America/New_York";
     }
   });
+  const [weekStartsOn, setWeekStartsOn] = React.useState(() => loadWeekStartsOn());
+  const [includeTrashExport, setIncludeTrashExport] = React.useState(false);
+  const [exporting, setExporting] = React.useState(false);
   const [archiveOpen, setArchiveOpen] = React.useState(false);
   const [archiveTab, setArchiveTab] = React.useState("completed"); // completed | trash
   const [active, setActive] = React.useState(null);
@@ -77,6 +82,29 @@ export default function Settings() {
   function saveTimezone(tz) {
     setTimezone(tz);
     localStorage.setItem(TZ_KEY, tz);
+  }
+
+  function saveWeekStart(value) {
+    setWeekStartsOn(saveWeekStartsOn(value));
+  }
+
+  async function exportHousehold() {
+    setExporting(true);
+    try {
+      const data = await buildHouseholdExport({ includeTrash: includeTrashExport });
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadJson(`goeshere-export-${stamp}.json`, data);
+      toast({
+        title: "Export downloaded",
+        description: includeTrashExport
+          ? "Includes active data and trash."
+          : "Active items, people, and projects (trash excluded).",
+      });
+    } catch (e) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
   }
 
   const zones = React.useMemo(() => {
@@ -338,6 +366,75 @@ export default function Settings() {
             <option key={z} value={z}>{z}</option>
           ))}
         </select>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 space-y-2">
+        <div className="flex items-center gap-2 mb-1">
+          <CalendarRange className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">Week starts on</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Calendar Month and Week views on this device. Stored in this browser only.
+        </p>
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => saveWeekStart(0)}
+            className={cn(
+              "min-h-[44px] flex-1 rounded-[6px] border px-3 text-sm font-medium",
+              weekStartsOn === 0
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground"
+            )}
+          >
+            Sunday
+          </button>
+          <button
+            type="button"
+            onClick={() => saveWeekStart(1)}
+            className={cn(
+              "min-h-[44px] flex-1 rounded-[6px] border px-3 text-sm font-medium",
+              weekStartsOn === 1
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground"
+            )}
+          >
+            Monday
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Download className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">Export household data</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Download a JSON backup of items, people, and projects. Family members only. Import is not included yet.
+        </p>
+        <label className="flex items-center gap-2 text-sm min-h-[40px]">
+          <input
+            type="checkbox"
+            checked={includeTrashExport}
+            onChange={(e) => setIncludeTrashExport(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          Include trash
+        </label>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-[44px] w-full sm:w-auto"
+          disabled={exporting}
+          onClick={exportHousehold}
+        >
+          {exporting ? (
+            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+          ) : (
+            <Download className="h-4 w-4 mr-1" />
+          )}
+          Download JSON
+        </Button>
       </section>
 
       <section className="rounded-xl border border-border bg-card divide-y divide-border">

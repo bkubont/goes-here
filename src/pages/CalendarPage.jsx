@@ -16,8 +16,7 @@ import { resolveBlockMinutes } from "@/lib/estimateDuration";
 import { downloadDayIcs } from "@/lib/ics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
 
 const POOL_TYPES = new Set([
   "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
@@ -47,6 +46,8 @@ export default function CalendarPage() {
   const all = items || [];
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const weekStartsOn = useWeekStartsOn();
+  const dowLabels = weekDayLabels(weekStartsOn);
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
   const tabParam = searchParams.get("tab");
@@ -76,26 +77,26 @@ export default function CalendarPage() {
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
+  const firstDayPad = monthGridPad(year, month, weekStartsOn);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayKey = toDayKey(new Date());
 
   const rangeStart = view === "month"
     ? new Date(year, month, 1)
     : view === "week"
-      ? startOfWeek(selected)
+      ? startOfWeek(selected, weekStartsOn)
       : (() => { const d = new Date(selected); d.setHours(0, 0, 0, 0); return d; })();
   const rangeEnd = view === "month"
     ? new Date(year, month, daysInMonth)
     : view === "agenda"
       ? (() => { const d = new Date(selected); d.setDate(d.getDate() + 13); d.setHours(23, 59, 59, 999); return d; })()
       : view === "week"
-        ? endOfWeek(selected)
+        ? endOfWeek(selected, weekStartsOn)
         : (() => { const d = new Date(selected); d.setHours(23, 59, 59, 999); return d; })();
 
   const weekDayList = React.useMemo(
-    () => (view === "week" ? weekDays(selected) : []),
-    [view, selected.getTime()]
+    () => (view === "week" ? weekDays(selected, weekStartsOn) : []),
+    [view, selected.getTime(), weekStartsOn]
   );
 
   const byDay = React.useMemo(() => {
@@ -112,7 +113,7 @@ export default function CalendarPage() {
   }, [all, rangeStart.getTime(), rangeEnd.getTime()]);
 
   const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let i = 0; i < firstDayPad; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
   const selKey = toDayKey(selected);
@@ -528,7 +529,7 @@ export default function CalendarPage() {
         <div className="grid lg:grid-cols-[1fr_300px] gap-6">
           <div className="rounded-xl border border-border bg-card p-3">
             <div className="grid grid-cols-7 mb-2">
-              {DOW.map((d) => <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>)}
+              {dowLabels.map((d) => <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-1">
               {cells.map((d, i) => {

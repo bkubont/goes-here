@@ -1,13 +1,14 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift,
+  ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift, History,
 } from "lucide-react";
 import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import {
   ITEM_TYPE_MAP, PINNED_LIST_KEYS, isToday, isUpcoming, isOverdue, parseDay, toDayKey,
 } from "@/lib/itemTypes";
+import { formatRelativeTime } from "@/lib/relativeTime";
 import {
   upcomingBirthdays, formatBirthdayCountdown, formatBirthdayShort,
 } from "@/lib/birthdays";
@@ -101,6 +102,19 @@ export default function Home() {
   const needsReview = active.filter((i) => i.inbox);
   const billsDue = active.filter((i) => i.type === "bill" && i.payment_status !== "paid" && (isOverdue(i.due_date) || isToday(i.due_date) || isUpcoming(i.due_date) || !i.due_date));
   const reminders = dueReminders(active);
+
+  const recent = React.useMemo(() => {
+    return [...all]
+      .filter((i) => !i._recurringOccurrence)
+      .sort((a, b) => {
+        const aT = a.updated_at || a.created_date || "";
+        const bT = b.updated_at || b.created_date || "";
+        return String(bT).localeCompare(String(aT));
+      })
+      .slice(0, 12);
+  }, [all]);
+
+  const [recentActive, setRecentActive] = React.useState(null);
 
   const attention = [
     overdue.length > 0 && {
@@ -283,6 +297,50 @@ export default function Home() {
 
       {reminders.length > 0 && (
         <DueRemindersBlock items={reminders.slice(0, 5)} onDismiss={dismissReminder} />
+      )}
+
+      {recent.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-heading text-base font-semibold flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" /> Recent
+            </h2>
+            <span className="text-xs text-muted-foreground">Last updated</span>
+          </div>
+          <div className="space-y-1.5">
+            {recent.map((it) => {
+              const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+              const when = formatRelativeTime(it.updated_at || it.created_date);
+              return (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => setRecentActive(it)}
+                  className="flex w-full min-h-[48px] items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-left transition hover:shadow-sm"
+                >
+                  <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-[6px] border", TI.tone)}>
+                    <TI.icon className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-70")}>
+                      {it.content}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {TI.label}
+                      {it.responsible_name ? ` · ${it.responsible_name}` : ""}
+                      {when ? ` · ${when}` : ""}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <ItemDetailDrawer
+            item={recentActive}
+            open={!!recentActive}
+            onOpenChange={(o) => !o && setRecentActive(null)}
+          />
+        </section>
       )}
 
       <section>
