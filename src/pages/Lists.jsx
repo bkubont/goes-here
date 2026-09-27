@@ -4,6 +4,7 @@ import { LayoutList, Pin, EyeOff, Eye } from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
 import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
+import CollapsibleListSection from "@/components/CollapsibleListSection";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
@@ -258,28 +259,39 @@ export default function Lists() {
           peopleNames={peopleNames}
         />
 
-        <div className="space-y-6">
+        <div className="space-y-2">
           {typeOrder.map((key) => {
             const TI = ITEM_TYPE_MAP[key];
             const Icon = TI.icon;
             return (
-              <section key={key}>
-                <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              <CollapsibleListSection
+                key={key}
+                storageKey={`type:${key}`}
+                label={TI.plural || TI.label}
+                count={byType[key].length}
+                icon={
                   <span className={cn("grid h-6 w-6 place-items-center rounded-[4px] border", TI.tone)}>
                     <Icon className="h-3.5 w-3.5" />
                   </span>
-                  {TI.plural || TI.label}
-                  <span className="font-normal normal-case tracking-normal">· {byType[key].length}</span>
-                </h2>
-                <ItemList items={byType[key]} />
-              </section>
+                }
+              >
+                {key === "grocery" ? (
+                  <GroceryView items={byType[key]} />
+                ) : (
+                  <ItemList items={byType[key]} />
+                )}
+              </CollapsibleListSection>
             );
           })}
           {orphanKeys.map((key) => (
-            <section key={key}>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{key}</h2>
+            <CollapsibleListSection
+              key={key}
+              storageKey={`type:${key}`}
+              label={key}
+              count={byType[key].length}
+            >
               <ItemList items={byType[key]} />
-            </section>
+            </CollapsibleListSection>
           ))}
           {!active.length && (
             <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
@@ -355,12 +367,16 @@ function GroceryView({ items }) {
     (groups[c] = groups[c] || []).push(it);
   });
   return (
-    <div className="space-y-5">
+    <div className="space-y-1">
       {GROCERY_CATEGORIES.filter((c) => (groups[c] || []).length).map((c) => (
-        <div key={c}>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{c}</h3>
+        <CollapsibleListSection
+          key={c}
+          storageKey={`aisle:${c}`}
+          label={c}
+          count={groups[c].length}
+        >
           <ItemList items={groups[c]} />
-        </div>
+        </CollapsibleListSection>
       ))}
       {!items.length && (
         <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
