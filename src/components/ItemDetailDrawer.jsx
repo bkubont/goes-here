@@ -75,19 +75,24 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
   const meName = useDevicePerson();
+  const meNameRef = React.useRef(meName);
+  meNameRef.current = meName;
   const [form, setForm] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
   const peopleNames = (people || []).map((p) => p.name);
   const projectNames = (projects || []).map((p) => p.name);
 
+  // Initialize form only when the drawer opens or the item identity changes.
+  // Do not depend on meName — that resolves async and must not wipe typed fields.
   React.useEffect(() => {
     if (open && item) {
       const next = buildForm(item);
-      // New drafts only: default Assigned to from Settings “This device is”.
-      // Never overwrite an explicit value or an edit of an existing item.
-      if (item._draft && next && !String(next.responsible_name || "").trim() && meName) {
-        next.responsible_name = meName;
+      // New drafts only: default Assigned to from Settings “This device is”
+      // when meName is already known. Late arrivals are handled below.
+      const knownMe = meNameRef.current;
+      if (item._draft && next && !String(next.responsible_name || "").trim() && knownMe) {
+        next.responsible_name = knownMe;
       }
       setForm(next);
       // Create mode shows type + more fields up front (“all the options”).
@@ -97,7 +102,17 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       const t = setTimeout(() => setForm(null), 200);
       return () => clearTimeout(t);
     }
-  }, [item, open, meName]);
+  }, [item, open]);
+
+  // When device person arrives after a new draft opened with empty assignee,
+  // fill default only — never rebuild the whole form or touch existing items.
+  React.useEffect(() => {
+    if (!open || !item?._draft || !meName) return;
+    setForm((f) => {
+      if (!f || String(f.responsible_name || "").trim()) return f;
+      return { ...f, responsible_name: meName };
+    });
+  }, [meName, open, item]);
 
   const handleOpenChange = React.useCallback((next) => {
     if (!next) onOpenChange?.(false);
