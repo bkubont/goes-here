@@ -1,15 +1,31 @@
-// Per-device list type visibility + order (Settings → Lists).
-// Built-in types only — show / hide / reorder (product choice 1B).
+// Per-device list type visibility + order + colors (Settings → Lists / Lists hub).
+// Built-in types only — show / hide / reorder / accent color (product choice 1B).
 
 import { PINNED_LIST_KEYS, PLANNING_TYPES, PLANNING_TYPE_KEYS } from "@/lib/itemTypes";
+import {
+  COLOR_PALETTE,
+  defaultListTypeColor,
+  normalizeToPalette,
+} from "@/lib/colorPalette";
 
 const PREFS_KEY = "goeshere.lists.prefs";
 const LEGACY_HIDDEN_KEY = "goeshere.lists.hidden";
+
+/** Include grocery for hub accent even though prefs order is planning-only. */
+const COLORABLE_KEYS = [...PLANNING_TYPE_KEYS, "grocery"];
 
 function defaultOrder() {
   const pinned = PINNED_LIST_KEYS.filter((k) => PLANNING_TYPE_KEYS.includes(k));
   const rest = PLANNING_TYPE_KEYS.filter((k) => !pinned.includes(k));
   return [...pinned, ...rest];
+}
+
+function defaultColors() {
+  const colors = {};
+  for (const key of COLORABLE_KEYS) {
+    colors[key] = defaultListTypeColor(key);
+  }
+  return colors;
 }
 
 function sanitizeOrder(order) {
@@ -38,8 +54,21 @@ function sanitizeHidden(hidden, order) {
   return [...set];
 }
 
+function sanitizeColors(colors) {
+  const defaults = defaultColors();
+  const next = { ...defaults };
+  if (colors && typeof colors === "object") {
+    for (const key of COLORABLE_KEYS) {
+      if (colors[key]) {
+        next[key] = normalizeToPalette(colors[key], defaults[key] || COLOR_PALETTE[0]);
+      }
+    }
+  }
+  return next;
+}
+
 /**
- * @returns {{ order: string[], hidden: string[] }}
+ * @returns {{ order: string[], hidden: string[], colors: Record<string, string> }}
  */
 export function loadListPrefs() {
   try {
@@ -48,7 +77,8 @@ export function loadListPrefs() {
       const parsed = JSON.parse(raw);
       const order = sanitizeOrder(parsed?.order);
       const hidden = sanitizeHidden(parsed?.hidden, order);
-      return { order, hidden };
+      const colors = sanitizeColors(parsed?.colors);
+      return { order, hidden, colors };
     }
   } catch {
     /* fall through */
@@ -65,18 +95,20 @@ export function loadListPrefs() {
   return {
     order,
     hidden: sanitizeHidden(legacyHidden, order),
+    colors: defaultColors(),
   };
 }
 
 /**
- * @param {{ order?: string[], hidden?: string[] }} prefs
- * @returns {{ order: string[], hidden: string[] }}
+ * @param {{ order?: string[], hidden?: string[], colors?: Record<string, string> }} prefs
+ * @returns {{ order: string[], hidden: string[], colors: Record<string, string> }}
  */
 export function saveListPrefs(prefs) {
   const current = loadListPrefs();
   const order = sanitizeOrder(prefs.order ?? current.order);
   const hidden = sanitizeHidden(prefs.hidden ?? current.hidden, order);
-  const next = { order, hidden };
+  const colors = sanitizeColors(prefs.colors ?? current.colors);
+  const next = { order, hidden, colors };
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(next));
     // Keep legacy key in sync so older code paths stay consistent.
@@ -103,12 +135,27 @@ export function isListTypeHidden(key, prefs = loadListPrefs()) {
   return prefs.hidden.includes(key);
 }
 
+export function getListTypeColor(key, prefs = loadListPrefs()) {
+  const colors = prefs.colors || defaultColors();
+  return colors[key] || defaultListTypeColor(key);
+}
+
 export function setListTypeHidden(key, hide) {
   const prefs = loadListPrefs();
   const hidden = new Set(prefs.hidden);
   if (hide) hidden.add(key);
   else hidden.delete(key);
   return saveListPrefs({ ...prefs, hidden: [...hidden] });
+}
+
+export function setListTypeColor(key, color) {
+  if (!COLORABLE_KEYS.includes(key)) return loadListPrefs();
+  const prefs = loadListPrefs();
+  const colors = {
+    ...prefs.colors,
+    [key]: normalizeToPalette(color, defaultListTypeColor(key)),
+  };
+  return saveListPrefs({ ...prefs, colors });
 }
 
 export function moveListType(key, direction) {
@@ -123,7 +170,7 @@ export function moveListType(key, direction) {
 }
 
 export function resetListPrefs() {
-  const next = { order: defaultOrder(), hidden: [] };
+  const next = { order: defaultOrder(), hidden: [], colors: defaultColors() };
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(next));
     localStorage.setItem(LEGACY_HIDDEN_KEY, JSON.stringify([]));

@@ -14,8 +14,8 @@ import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
 import {
   nextBirthdayDate, formatBirthdayCountdown, formatBirthdayShort,
 } from "@/lib/birthdays";
-
-const COLORS = ["#0404A9", "#CFAB59", "#555D6D", "#0A0A0A", "#0505C7", "#1d4ed8", "#15803d"];
+import { COLOR_PALETTE, normalizeToPalette } from "@/lib/colorPalette";
+import ColorPicker from "@/components/ColorPicker";
 
 function birthdayInputValue(value) {
   if (!value) return "";
@@ -47,20 +47,51 @@ export default function People() {
   const [adding, setAdding] = React.useState(false);
   const [name, setName] = React.useState("");
   const [role, setRole] = React.useState("");
+  const [addColor, setAddColor] = React.useState(COLOR_PALETTE[0]);
   const [saving, setSaving] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [editForm, setEditForm] = React.useState({
     name: "",
     role: "",
-    color: COLORS[0],
+    color: COLOR_PALETTE[0],
     birthday: "",
     notes: "",
   });
   const [editSaving, setEditSaving] = React.useState(false);
   const [giftDraft, setGiftDraft] = React.useState(null);
+  const migratedRef = React.useRef(false);
 
   const list = people || [];
   const allItems = items || [];
+
+  // One-shot: snap legacy off-palette people.color to nearest swatch.
+  React.useEffect(() => {
+    if (migratedRef.current || !people?.length) return;
+    migratedRef.current = true;
+    const stale = people.filter((p) => {
+      if (!p.color) return false;
+      return normalizeToPalette(p.color).toLowerCase() !== String(p.color).toLowerCase();
+    });
+    if (!stale.length) return;
+    (async () => {
+      try {
+        await Promise.all(
+          stale.map((p) =>
+            entities.Person.update(p.id, { color: normalizeToPalette(p.color) })
+          )
+        );
+        patchPeopleCaches((rows) =>
+          rows.map((p) => {
+            const hit = stale.find((s) => s.id === p.id);
+            return hit ? { ...p, color: normalizeToPalette(hit.color) } : p;
+          })
+        );
+        await invalidateAll();
+      } catch {
+        /* non-blocking */
+      }
+    })();
+  }, [people]);
 
   async function add(e) {
     e.preventDefault();
@@ -70,11 +101,12 @@ export default function People() {
       const row = await entities.Person.create({
         name: name.trim(),
         role: role.trim(),
-        color: COLORS[list.length % COLORS.length],
+        color: normalizeToPalette(addColor, COLOR_PALETTE[list.length % COLOR_PALETTE.length]),
       });
       if (row) patchPeopleCaches((people) => [...people, row].sort((a, b) => a.name.localeCompare(b.name)));
       await invalidateAll();
       setName(""); setRole("");
+      setAddColor(COLOR_PALETTE[(list.length + 1) % COLOR_PALETTE.length]);
       setAdding(false);
     } catch (err) {
       toast({ title: "Couldn't add person", description: err.message, variant: "destructive" });
@@ -87,7 +119,7 @@ export default function People() {
     setEditForm({
       name: person?.name || "",
       role: person?.role || "",
-      color: person?.color || COLORS[0],
+      color: normalizeToPalette(person?.color, COLOR_PALETTE[0]),
       birthday: birthdayInputValue(person?.birthday),
       notes: person?.notes || "",
     });
@@ -105,7 +137,7 @@ export default function People() {
       const row = await entities.Person.update(person.id, {
         name: nextName,
         role: editForm.role.trim(),
-        color: editForm.color || COLORS[0],
+        color: normalizeToPalette(editForm.color, COLOR_PALETTE[0]),
         birthday: editForm.birthday || null,
         notes: editForm.notes.trim(),
       });
@@ -209,20 +241,13 @@ export default function People() {
                 <Label htmlFor="person-birthday">Birthday</Label>
                 <Input id="person-birthday" type="date" value={editForm.birthday} onChange={(e) => setEditForm((f) => ({ ...f, birthday: e.target.value }))} />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label>Color</Label>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setEditForm((f) => ({ ...f, color: c }))}
-                      className="h-8 w-8 rounded-full border-2 transition"
-                      style={{ background: c, borderColor: editForm.color === c ? "#0404A9" : "transparent" }}
-                      aria-label={`Color ${c}`}
-                    />
-                  ))}
-                </div>
+                <ColorPicker
+                  value={editForm.color}
+                  onChange={(c) => setEditForm((f) => ({ ...f, color: c }))}
+                  label={`Color for ${editForm.name || "person"}`}
+                />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -339,6 +364,14 @@ export default function People() {
           <div className="grid sm:grid-cols-2 gap-3">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (e.g. Riley)" autoFocus />
             <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role (e.g. son)" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Color</Label>
+            <ColorPicker
+              value={addColor}
+              onChange={setAddColor}
+              label="Color for new person"
+            />
           </div>
           <div className="flex gap-2">
             <Button type="submit" disabled={saving || !name.trim()} className="min-h-[44px]">
