@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, ChevronRight, Repeat, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Repeat, Clock, Download } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
+import { downloadDayIcs } from "@/lib/ics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -222,6 +223,30 @@ export default function CalendarPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {view === "day" && (
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[44px]"
+              onClick={() => {
+                const n = downloadDayIcs(selected, selItems, { timedOnly: true });
+                if (n) {
+                  toast({
+                    title: `Exported ${n} timed item${n === 1 ? "" : "s"}`,
+                    description: "Downloaded .ics uses floating local times (device wall-clock).",
+                  });
+                } else {
+                  toast({
+                    title: "Nothing to export",
+                    description: "Add a clock time to items on this day first.",
+                  });
+                }
+              }}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Export day
+            </Button>
+          )}
           <div className="flex rounded-[6px] border border-border p-0.5 bg-card">
             {isMobile && (
               <button

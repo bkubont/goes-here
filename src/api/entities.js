@@ -72,4 +72,18 @@ export const entities = {
   Person: table('people'),
   Project: table('projects'),
   Attachment: table('attachments'),
+  /** Allowlist emails in family_members (PK is email, not id). */
+  FamilyMember: {
+    list: (sort = 'email', limit = 200) => select('family_members', null, sort, limit),
+    create: (row) =>
+      run(supabase.from('family_members').insert(row).select().single()),
+    deleteByEmail: (email) =>
+      run(
+        supabase
+          .from('family_members')
+          .delete()
+          .eq('email', email)
+          .select()
+      ),
+  },
 };
