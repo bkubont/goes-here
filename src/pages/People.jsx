@@ -1,5 +1,6 @@
 import React from "react";
-import { Plus, Loader2, Pencil } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Loader2, Pencil, Gift } from "lucide-react";
 import { usePeople, useItems, invalidateAll, patchPeopleCaches, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import ItemList from "@/components/ItemList";
+import ItemDetailDrawer from "@/components/ItemDetailDrawer";
+import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
+import {
+  nextBirthdayDate, formatBirthdayCountdown, formatBirthdayShort,
+} from "@/lib/birthdays";
 
 const COLORS = ["#0404A9", "#CFAB59", "#555D6D", "#0A0A0A", "#0505C7", "#1d4ed8", "#15803d"];
 
@@ -51,6 +57,7 @@ export default function People() {
     notes: "",
   });
   const [editSaving, setEditSaving] = React.useState(false);
+  const [giftDraft, setGiftDraft] = React.useState(null);
 
   const list = people || [];
   const allItems = items || [];
@@ -132,6 +139,14 @@ export default function People() {
     const person = list.find((p) => p.id === selected);
     const about = allItems.filter((i) => i.person_name === person?.name && !i.completed);
     const responsible = allItems.filter((i) => i.responsible_name === person?.name && !i.completed);
+    const giftsRollup = giftBudgetRollup(allItems, person?.name);
+    const nextBday = person?.birthday ? nextBirthdayDate(person.birthday) : null;
+    const daysUntilBday = (() => {
+      if (!nextBday) return null;
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return Math.round((nextBday - start) / (24 * 60 * 60 * 1000));
+    })();
     const overdueAssigned = responsible.filter((i) => {
       if (!i.due_date && !i.date) return false;
       const d = new Date(i.due_date || i.date);
@@ -140,11 +155,28 @@ export default function People() {
       d.setHours(0, 0, 0, 0);
       return d < now;
     });
+
+    function openGiftDraft() {
+      setGiftDraft({
+        _draft: true,
+        id: `draft-gift-${person?.name}`,
+        content: "",
+        type: "gift",
+        person_name: person?.name || "",
+        completed: false,
+        board_status: "backlog",
+        tags: [],
+        inbox: false,
+        wrapped: false,
+        priority: "medium",
+      });
+    }
+
     return (
       <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-8">
         <button
           type="button"
-          onClick={() => { setSelected(null); setEditing(false); }}
+          onClick={() => { setSelected(null); setEditing(false); setGiftDraft(null); }}
           className="text-sm text-muted-foreground hover:text-foreground mb-3 min-h-[44px]"
         >
           ← All people
@@ -211,12 +243,58 @@ export default function People() {
           (person?.birthday || person?.notes) && (
             <div className="rounded-xl border border-border bg-card p-4 mb-6 space-y-1 text-sm">
               {person.birthday && (
-                <p><span className="text-muted-foreground">Birthday:</span> {birthdayInputValue(person.birthday)}</p>
+                <p>
+                  <span className="text-muted-foreground">Birthday:</span>{" "}
+                  {birthdayInputValue(person.birthday)}
+                  {nextBday && daysUntilBday != null && daysUntilBday <= 30 && (
+                    <span className="text-muted-foreground">
+                      {" "}· next {formatBirthdayShort(nextBday)} ({formatBirthdayCountdown(daysUntilBday)})
+                    </span>
+                  )}
+                </p>
               )}
               {person.notes && <p className="whitespace-pre-wrap">{person.notes}</p>}
             </div>
           )
         )}
+
+        <section className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h2 className="font-heading text-base font-semibold flex items-center gap-2">
+              <Gift className="h-4 w-4 text-primary" /> Gifts
+            </h2>
+            <div className="flex flex-wrap gap-1.5">
+              <Button asChild type="button" variant="outline" size="sm" className="min-h-[40px]">
+                <Link to={`/lists/gift?person=${encodeURIComponent(person?.name || "")}`}>
+                  View list
+                </Link>
+              </Button>
+              <Button type="button" size="sm" className="min-h-[40px]" onClick={openGiftDraft}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add gift
+              </Button>
+            </div>
+          </div>
+          {(giftsRollup.budgetTotal != null || giftsRollup.spentTotal != null) && (
+            <p className="text-sm text-muted-foreground mb-2">
+              {giftsRollup.budgetTotal != null && (
+                <span>Budget {formatMoney(giftsRollup.budgetTotal)}</span>
+              )}
+              {giftsRollup.budgetTotal != null && giftsRollup.spentTotal != null && <span> · </span>}
+              {giftsRollup.spentTotal != null && (
+                <span>Spent {formatMoney(giftsRollup.spentTotal)}</span>
+              )}
+              {giftsRollup.budgetTotal != null && giftsRollup.spentTotal != null && (
+                <span>
+                  {" "}· Left {formatMoney(giftsRollup.remaining)}
+                </span>
+              )}
+            </p>
+          )}
+          <ItemList
+            items={giftsRollup.gifts}
+            emptyHint={`No open gifts for ${person?.name || "them"} yet.`}
+          />
+        </section>
 
         {overdueAssigned.length > 0 && (
           <section className="mb-6">
@@ -224,16 +302,22 @@ export default function People() {
             <ItemList items={overdueAssigned} />
           </section>
         )}
-        {about.length > 0 && (
+        {about.filter((i) => i.type !== "gift").length > 0 && (
           <section className="mb-6">
             <h2 className="font-heading text-base font-semibold mb-2">About {person?.name}</h2>
-            <ItemList items={about} />
+            <ItemList items={about.filter((i) => i.type !== "gift")} />
           </section>
         )}
         <section>
           <h2 className="font-heading text-base font-semibold mb-2">Assigned to {person?.name}</h2>
           <ItemList items={responsible} emptyHint="Nothing assigned right now." />
         </section>
+
+        <ItemDetailDrawer
+          item={giftDraft}
+          open={!!giftDraft}
+          onOpenChange={(o) => !o && setGiftDraft(null)}
+        />
       </div>
     );
   }

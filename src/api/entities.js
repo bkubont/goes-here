@@ -10,7 +10,8 @@ async function run(query) {
 }
 
 // sort is a column name, prefixed with "-" for descending (e.g. "-created_date").
-function select(table, match, sort, limit, { includeDeleted = false } = {}) {
+// options.offset + limit use inclusive PostgREST range for pagination.
+function select(table, match, sort, limit, { includeDeleted = false, offset = 0 } = {}) {
   let q = supabase.from(table).select('*');
   if (match) q = q.match(match);
   // Soft-deleted items stay out of normal lists unless explicitly requested.
@@ -21,7 +22,10 @@ function select(table, match, sort, limit, { includeDeleted = false } = {}) {
     const desc = sort.startsWith('-');
     q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
   }
-  if (limit) q = q.limit(limit);
+  if (limit) {
+    const from = Math.max(0, Number(offset) || 0);
+    q = q.range(from, from + limit - 1);
+  }
   return run(q);
 }
 

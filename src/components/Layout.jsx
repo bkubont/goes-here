@@ -5,10 +5,11 @@ import {
   Search, Inbox, Plus, LogOut, MoreHorizontal, Settings, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useItems } from "@/lib/queries";
+import { useItems, ITEMS_PAGE_SIZE } from "@/lib/queries";
 import { useAuth } from "@/lib/AuthContext";
 import QuickAdd from "@/components/QuickAdd";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import ItemsLoadMoreBanner from "@/components/ItemsLoadMoreBanner";
 
 const DESKTOP_NAV = [
   { to: "/", label: "Home", icon: Home, end: true },
@@ -67,9 +68,10 @@ export default function Layout() {
   const [quickOpen, setQuickOpen] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
   const { user, logout } = useAuth();
-  const { data: items } = useItems({});
+  const { data: items, hasMore, loadMore, isLoadingMore, pageSize } = useItems({});
   const location = useLocation();
   const inboxCount = (items || []).filter((i) => !i.completed && (i.inbox || i.type === "to_schedule")).length;
+  const itemCount = (items || []).length;
   const moreActive = MORE_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
   const isShoppingMode = location.pathname === "/lists/grocery/shop";
 
@@ -178,6 +180,17 @@ export default function Layout() {
           <ErrorBoundary key={location.pathname}>
             <Outlet />
           </ErrorBoundary>
+          {hasMore && (
+            <div className="mx-auto max-w-5xl px-4 py-3 md:px-8">
+              <ItemsLoadMoreBanner
+                count={itemCount}
+                pageSize={pageSize || ITEMS_PAGE_SIZE}
+                hasMore={hasMore}
+                onLoadMore={loadMore}
+                isLoadingMore={isLoadingMore}
+              />
+            </div>
+          )}
         </main>
 
         {/* Mobile bottom nav — five destinations */}

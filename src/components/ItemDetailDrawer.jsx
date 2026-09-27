@@ -104,8 +104,9 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   }
 
   const set = (patch) => setForm((f) => (f ? { ...f, ...patch } : f));
-  const recordId = item._originalId || item.id;
-  const isVirtual = !!item._recurringOccurrence;
+  const isDraft = !!item._draft;
+  const recordId = isDraft ? null : (item._originalId || item.id);
+  const isVirtual = !isDraft && !!item._recurringOccurrence;
   const recurringText = resolveRecurringWrite(form);
   const summary = form.recurring
     ? formatRecurrenceSummary(recurringText || form.recurring, form.date || item.date)
@@ -204,6 +205,26 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         if (form.completed && form.board_status !== "done") payload.board_status = "done";
         if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
       }
+
+      if (isDraft) {
+        if (!String(form.content || "").trim()) {
+          toast({ title: "Title required", description: "Give this item a name.", variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+        const created = await entities.Item.create({
+          ...payload,
+          tags: form.tags || [],
+          purchased: !!form.purchased,
+          wrapped: !!form.wrapped,
+        });
+        if (created) patchItemsCaches((list) => [created, ...list]);
+        await invalidateAll();
+        toast({ title: "Created", description: form.content });
+        handleOpenChange(false);
+        return;
+      }
+
       await entities.Item.update(recordId, payload);
       await invalidateAll();
       if (completedChanged && payload.completed) {
@@ -587,9 +608,13 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Budget</Label>
-                <Input type="number" value={form.budget ?? ""} onChange={(e) => set({ budget: e.target.value })} />
+                <Input type="number" value={form.budget ?? ""} onChange={(e) => set({ budget: e.target.value })} placeholder="Planned" />
               </div>
               <div className="space-y-1.5">
+                <Label>Spent</Label>
+                <Input type="number" value={form.amount ?? ""} onChange={(e) => set({ amount: e.target.value })} placeholder="Optional" />
+              </div>
+              <div className="space-y-1.5 col-span-2">
                 <Label>Store</Label>
                 <Input value={form.store || ""} onChange={(e) => set({ store: e.target.value })} />
               </div>
@@ -608,8 +633,11 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         </div>
       )}
 
-      {!isVirtual && (
+      {!isVirtual && !isDraft && (
         <ItemAttachments itemId={recordId} disabled={saving} />
+      )}
+      {isDraft && (
+        <p className="text-xs text-muted-foreground">Save to attach photos or files.</p>
       )}
 
       {(form.date || item.date) && (
@@ -669,13 +697,18 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         </p>
       )}
       <div className="flex w-full items-center justify-between gap-2">
-        <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
-          <Trash2 className="h-4 w-4 mr-1" /> Delete
-        </Button>
-        <div className="flex gap-2">
+        {isDraft ? (
+          <span />
+        ) : (
+          <Button variant="ghost" onClick={remove} disabled={saving} className="text-destructive hover:text-destructive min-h-[44px]">
+            <Trash2 className="h-4 w-4 mr-1" /> Delete
+          </Button>
+        )}
+        <div className="flex gap-2 ml-auto">
           <Button variant="outline" onClick={() => handleOpenChange(false)} className="min-h-[44px]">Cancel</Button>
           <Button onClick={() => save({ series: true })} disabled={saving} className="min-h-[44px]">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Save
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+            {isDraft ? "Create" : "Save"}
           </Button>
         </div>
       </div>
@@ -692,13 +725,17 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
     </p>
   );
 
+  const drawerTitle = isDraft
+    ? (form.type === "gift" ? "New gift" : "New item")
+    : "Edit item";
+
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent side="bottom" className="flex h-[92vh] flex-col rounded-t-xl p-0 gap-0">
           <SheetHeader className="border-b border-border px-4 py-3 text-left">
-            <SheetTitle className="font-heading text-lg">Edit item</SheetTitle>
-            <SheetDescription className="sr-only">Edit item details</SheetDescription>
+            <SheetTitle className="font-heading text-lg">{drawerTitle}</SheetTitle>
+            <SheetDescription className="sr-only">{drawerTitle}</SheetDescription>
             {seriesNote}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-4 py-3 scrollbar-thin">{fields}</div>
@@ -714,8 +751,8 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
-          <DialogTitle className="font-heading text-lg">Edit item</DialogTitle>
-          <DialogDescription className="sr-only">Edit item details</DialogDescription>
+          <DialogTitle className="font-heading text-lg">{drawerTitle}</DialogTitle>
+          <DialogDescription className="sr-only">{drawerTitle}</DialogDescription>
           {seriesNote}
         </DialogHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">{fields}</div>

@@ -1,6 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { entities } from "@/api/entities";
 import { queryClientInstance } from "@/lib/query-client";
+
+/** Default page size for item fetches — raised so large households don't silently miss rows. */
+export const ITEMS_PAGE_SIZE = 2000;
 
 function stableFilterKey(filter) {
   if (!filter || typeof filter !== "object") return null;
@@ -12,12 +15,31 @@ function stableFilterKey(filter) {
   return stable;
 }
 
+function flattenItemsPages(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.pages)) return data.pages.flat();
+  return [];
+}
+
+/** Apply an array recipe to either a plain list or infinite-query pages cache. */
+function applyItemsRecipe(data, recipe) {
+  if (Array.isArray(data)) return recipe(data);
+  if (data && Array.isArray(data.pages)) {
+    const next = recipe(flattenItemsPages(data));
+    // Collapse to one page after optimistic patch; invalidateAll refetches cleanly.
+    return { ...data, pages: [next], pageParams: [0] };
+  }
+  return data;
+}
+
 /** Patch every cached items list in place so the UI updates before refetch lands. */
 export function patchItemsCaches(recipe) {
   const entries = queryClientInstance.getQueriesData({ queryKey: ["items"] });
   for (const [key, data] of entries) {
-    if (!Array.isArray(data)) continue;
-    queryClientInstance.setQueryData(key, recipe(data));
+    if (!data) continue;
+    if (!Array.isArray(data) && !Array.isArray(data.pages)) continue;
+    queryClientInstance.setQueryData(key, applyItemsRecipe(data, recipe));
   }
 }
 
@@ -69,18 +91,43 @@ export async function invalidateAll() {
   ]);
 }
 
+/**
+ * Family items with a higher default page size and optional Load more.
+ * `data` is always a flat array (compatible with existing callers).
+ * When the last page is full, `hasMore` is true and `loadMore` fetches the next range.
+ */
 export function useItems(filter = {}, options = {}) {
+  const { pageSize = ITEMS_PAGE_SIZE, ...queryOptions } = options;
   const stable = stableFilterKey(filter);
-  return useQuery({
-    queryKey: stable ? ["items", stable] : ["items"],
-    queryFn: async () => {
-      if (!stable) return entities.Item.list("-created_date", 1000);
-      return entities.Item.filter(stable, "-created_date", 1000);
+  const queryKey = stable ? ["items", stable] : ["items"];
+
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam = 0 }) => {
+      const opts = { offset: pageParam };
+      if (!stable) return entities.Item.list("-created_date", pageSize, opts);
+      return entities.Item.filter(stable, "-created_date", pageSize, opts);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage || lastPage.length < pageSize) return undefined;
+      return allPages.reduce((n, p) => n + (p?.length || 0), 0);
     },
     // Prefer freshness after local writes; invalidateAll still forces refetch.
     staleTime: 0,
-    ...options,
+    ...queryOptions,
   });
+
+  const items = flattenItemsPages(query.data);
+  return {
+    ...query,
+    data: items,
+    hasMore: !!query.hasNextPage,
+    loadMore: query.fetchNextPage,
+    isLoadingMore: query.isFetchingNextPage,
+    fetchLimit: items.length,
+    pageSize,
+  };
 }
 
 /** Soft-deleted items (Settings trash). */
