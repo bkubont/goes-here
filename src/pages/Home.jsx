@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift, History,
+  ShoppingCart,
 } from "lucide-react";
 import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
@@ -163,7 +164,9 @@ export default function Home() {
     const t = ITEM_TYPE_MAP[key];
     const count = all.filter((i) => i.type === key && !i.completed).length;
     return { ...t, count };
-  }).filter((t) => t.count > 0 || ["todo", "grocery", "bill"].includes(t.key));
+  }).filter((t) => t.count > 0 || ["todo", "bill"].includes(t.key));
+
+  const groceryOpen = all.filter((i) => i.type === "grocery" && !i.completed).length;
 
   const dateLabel = new Date().toLocaleDateString(undefined, {
     weekday: "long", month: "long", day: "numeric",
@@ -368,6 +371,23 @@ export default function Home() {
             View all <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
+        {groceryOpen > 0 && (
+          <Link
+            to="/lists/grocery/shop"
+            className="mb-2 flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-[6px] border border-primary/30 bg-card text-primary">
+              <ShoppingCart className="h-[18px] w-[18px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Shop groceries</p>
+              <p className="text-xs text-muted-foreground">
+                {groceryOpen} item{groceryOpen !== 1 ? "s" : ""} on the list
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+          </Link>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {pinned.map((t) => {
             const Icon = t.icon;

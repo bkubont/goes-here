@@ -2,7 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
-  RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, CalendarRange,
+  RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, Upload, CalendarRange,
+  CalendarDays,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -20,7 +21,13 @@ import { cn } from "@/lib/utils";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { supabase } from "@/api/supabaseClient";
 import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
+import {
+  CALENDAR_VIEWS, loadDefaultCalendarView, saveDefaultCalendarView,
+} from "@/lib/calendarView";
 import { buildHouseholdExport, downloadJson } from "@/lib/exportHousehold";
+import {
+  importHouseholdData, summarizeImport, validateHouseholdImport,
+} from "@/lib/importHousehold";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,8 +59,15 @@ export default function Settings() {
     }
   });
   const [weekStartsOn, setWeekStartsOn] = React.useState(() => loadWeekStartsOn());
+  const [defaultCalendarView, setDefaultCalendarView] = React.useState(
+    () => loadDefaultCalendarView() || "day"
+  );
   const [includeTrashExport, setIncludeTrashExport] = React.useState(false);
+  const [includeTrashImport, setIncludeTrashImport] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
+  const [importConfirm, setImportConfirm] = React.useState(null);
+  const importInputRef = React.useRef(null);
   const [archiveOpen, setArchiveOpen] = React.useState(false);
   const [archiveTab, setArchiveTab] = React.useState("completed"); // completed | trash
   const [active, setActive] = React.useState(null);
@@ -88,6 +102,10 @@ export default function Settings() {
     setWeekStartsOn(saveWeekStartsOn(value));
   }
 
+  function saveCalendarView(value) {
+    setDefaultCalendarView(saveDefaultCalendarView(value));
+  }
+
   async function exportHousehold() {
     setExporting(true);
     try {
@@ -104,6 +122,62 @@ export default function Settings() {
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
     } finally {
       setExporting(false);
+    }
+  }
+
+  function onImportFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || ""));
+        validateHouseholdImport(parsed);
+        const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 0;
+        const peopleCount = Array.isArray(parsed.people) ? parsed.people.length : 0;
+        const projectCount = Array.isArray(parsed.projects) ? parsed.projects.length : 0;
+        const trashCount = Array.isArray(parsed.trash) ? parsed.trash.length : 0;
+        setImportConfirm({
+          data: parsed,
+          fileName: file.name,
+          itemCount,
+          peopleCount,
+          projectCount,
+          trashCount,
+        });
+      } catch (err) {
+        toast({
+          title: "Invalid backup file",
+          description: err.message || "Could not parse JSON.",
+          variant: "destructive",
+        });
+      }
+    };
+    reader.onerror = () => {
+      toast({ title: "Couldn't read file", variant: "destructive" });
+    };
+    reader.readAsText(file);
+  }
+
+  async function confirmImport() {
+    if (!importConfirm?.data) return;
+    setImporting(true);
+    try {
+      const result = await importHouseholdData(importConfirm.data, {
+        includeTrash: includeTrashImport,
+      });
+      await invalidateAll();
+      setImportConfirm(null);
+      toast({
+        title: result.errorCount ? "Import finished with errors" : "Import complete",
+        description: summarizeImport(result),
+        variant: result.errorCount ? "destructive" : undefined,
+      });
+    } catch (e) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -404,13 +478,41 @@ export default function Settings() {
         </div>
       </section>
 
+      <section className="rounded-xl border border-border bg-card p-4 space-y-2">
+        <div className="flex items-center gap-2 mb-1">
+          <CalendarDays className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">Default calendar view</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Opens Calendar to this view when no view is in the URL. This device only.
+        </p>
+        <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
+          {CALENDAR_VIEWS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => saveCalendarView(v)}
+              className={cn(
+                "min-h-[44px] rounded-[6px] border px-3 text-sm font-medium capitalize",
+                defaultCalendarView === v
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-card text-muted-foreground"
+              )}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="rounded-xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Download className="h-4 w-4 text-primary" />
-          <p className="text-sm font-medium">Export household data</p>
+          <p className="text-sm font-medium">Backup</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Download a JSON backup of items, people, and projects. Family members only. Import is not included yet.
+          Export or import a JSON backup of items, people, and projects. Family members only.
+          Import merges and creates — it does not wipe your household.
         </p>
         <label className="flex items-center gap-2 text-sm min-h-[40px]">
           <input
@@ -419,22 +521,45 @@ export default function Settings() {
             onChange={(e) => setIncludeTrashExport(e.target.checked)}
             className="h-4 w-4 rounded border-border"
           />
-          Include trash
+          Include trash in export
         </label>
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-[44px] w-full sm:w-auto"
-          disabled={exporting}
-          onClick={exportHousehold}
-        >
-          {exporting ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-1" />
-          ) : (
-            <Download className="h-4 w-4 mr-1" />
-          )}
-          Download JSON
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[44px] w-full sm:w-auto"
+            disabled={exporting || importing}
+            onClick={exportHousehold}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Download className="h-4 w-4 mr-1" />
+            )}
+            Export
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[44px] w-full sm:w-auto"
+            disabled={exporting || importing}
+            onClick={() => importInputRef.current?.click()}
+          >
+            {importing ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Upload className="h-4 w-4 mr-1" />
+            )}
+            Import
+          </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onImportFileChange}
+          />
+        </div>
       </section>
 
       <section className="rounded-xl border border-border bg-card divide-y divide-border">
@@ -626,6 +751,58 @@ export default function Settings() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {removing ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!importConfirm}
+        onOpenChange={(o) => {
+          if (!o && !importing) setImportConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Import backup?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Merge{" "}
+                  <span className="font-medium text-foreground">{importConfirm?.fileName}</span> into
+                  this household. Matching ids are updated; new rows are created. Nothing is wiped.
+                </p>
+                <p>
+                  {importConfirm?.peopleCount ?? 0} people · {importConfirm?.projectCount ?? 0} projects ·{" "}
+                  {importConfirm?.itemCount ?? 0} items
+                  {(importConfirm?.trashCount ?? 0) > 0
+                    ? ` · ${importConfirm.trashCount} trash`
+                    : ""}
+                </p>
+                {(importConfirm?.trashCount ?? 0) > 0 && (
+                  <label className="flex items-center gap-2 text-foreground min-h-[40px]">
+                    <input
+                      type="checkbox"
+                      checked={includeTrashImport}
+                      onChange={(e) => setIncludeTrashImport(e.target.checked)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    Also import trash items
+                  </label>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={importing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={importing}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmImport();
+              }}
+            >
+              {importing ? "Importing…" : "Import"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

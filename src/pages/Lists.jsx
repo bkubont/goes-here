@@ -2,7 +2,9 @@ import React from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { LayoutList, Pin, EyeOff, Eye, ShoppingCart, Plus } from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
-import { ITEM_TYPES, ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS } from "@/lib/itemTypes";
+import {
+  ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS, PLANNING_TYPES,
+} from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import CollapsibleListSection from "@/components/CollapsibleListSection";
@@ -48,7 +50,18 @@ function TypePicker({ active }) {
       >
         All
       </Link>
-      {ITEM_TYPES.map((t) => (
+      <Link
+        to="/lists/grocery"
+        className={cn(
+          "rounded-[6px] border px-2.5 min-h-[36px] inline-flex items-center text-xs font-medium transition",
+          active === "grocery"
+            ? "border-primary bg-primary/10 text-primary"
+            : "border-border text-muted-foreground hover:bg-accent"
+        )}
+      >
+        Shopping
+      </Link>
+      {PLANNING_TYPES.map((t) => (
         <Link
           key={t.key}
           to={`/lists/${t.key}`}
@@ -164,12 +177,14 @@ export default function Lists() {
   }
 
   if (!type) {
-    const activeAll = all.filter((i) => !i.completed).length;
-    const visible = ITEM_TYPES.filter((t) => showHidden || !hidden.includes(t.key));
+    const groceryActive = all.filter((i) => i.type === "grocery" && !i.completed).length;
+    const planningActive = all.filter((i) => i.type !== "grocery" && !i.completed).length;
+    const visible = PLANNING_TYPES.filter((t) => showHidden || !hidden.includes(t.key));
     const pinnedFirst = [
       ...visible.filter((t) => PINNED_LIST_KEYS.includes(t.key)),
       ...visible.filter((t) => !PINNED_LIST_KEYS.includes(t.key)),
     ];
+    const groceryTI = ITEM_TYPE_MAP.grocery;
 
     return (
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8">
@@ -177,7 +192,7 @@ export default function Lists() {
           <div>
             <h1 className="page-title mb-1">Lists</h1>
             <p className="text-sm text-muted-foreground">
-              Pin what you use. Hide the rest.{" "}
+              Shopping stays separate from planning lists.{" "}
               <span className="text-foreground/80">Project items</span> are a list type;{" "}
               <Link to="/projects" className="text-primary hover:underline">Projects</Link> group work across types.
             </p>
@@ -188,64 +203,92 @@ export default function Lists() {
           </Button>
         </div>
 
-        <div className="mt-6 space-y-1.5">
-          <Link
-            to="/lists/all"
-            className="flex min-h-[52px] items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 hover:shadow-sm transition"
-          >
-            <span className="grid h-9 w-9 place-items-center rounded-[6px] border bg-muted text-muted-foreground border-border">
-              <LayoutList className="h-[18px] w-[18px]" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">All lists</p>
-              <p className="text-xs text-muted-foreground">{activeAll} active</p>
-            </div>
-          </Link>
-
-          {pinnedFirst.map((t) => {
-            const Icon = t.icon;
-            const c = all.filter((i) => i.type === t.key && !i.completed).length;
-            const isPinned = PINNED_LIST_KEYS.includes(t.key);
-            const isHidden = hidden.includes(t.key);
-            return (
-              <div
-                key={t.key}
-                className={cn(
-                  "flex min-h-[52px] items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5",
-                  isHidden && "opacity-50"
-                )}
-              >
-                <Link to={`/lists/${t.key}`} className="flex min-w-0 flex-1 items-center gap-3 px-1 py-1.5">
-                  <span className={cn("grid h-9 w-9 place-items-center rounded-[6px] border", t.tone)}>
-                    <Icon className="h-[18px] w-[18px]" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium flex items-center gap-1.5">
-                      {t.plural || t.label}
-                      {isPinned && <Pin className="h-3 w-3 text-primary" aria-label="Pinned" />}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{c} active</p>
-                  </div>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => toggleHidden(t.key)}
-                  className="grid h-10 w-10 place-items-center rounded-[6px] text-muted-foreground hover:bg-accent"
-                  aria-label={isHidden ? `Show ${t.label}` : `Hide ${t.label}`}
-                  title={isHidden ? "Show on home lists" : "Hide from lists overview"}
-                >
-                  {isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                </button>
+        <section className="mt-6">
+          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Shopping
+          </h2>
+          <div className="flex min-h-[56px] items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5">
+            <Link to="/lists/grocery" className="flex min-w-0 flex-1 items-center gap-3 px-1 py-1.5">
+              <span className={cn("grid h-9 w-9 place-items-center rounded-[6px] border", groceryTI.tone)}>
+                <ShoppingCart className="h-[18px] w-[18px]" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Groceries</p>
+                <p className="text-xs text-muted-foreground">{groceryActive} on the list</p>
               </div>
-            );
-          })}
-        </div>
+            </Link>
+            <ShopModeLink />
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Lists
+          </h2>
+          <div className="space-y-1.5">
+            <Link
+              to="/lists/all"
+              className="flex min-h-[52px] items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 hover:shadow-sm transition"
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-[6px] border bg-muted text-muted-foreground border-border">
+                <LayoutList className="h-[18px] w-[18px]" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">All lists</p>
+                <p className="text-xs text-muted-foreground">{planningActive} active · groceries not included</p>
+              </div>
+            </Link>
+
+            {pinnedFirst.map((t) => {
+              const Icon = t.icon;
+              const c = all.filter((i) => i.type === t.key && !i.completed).length;
+              const isPinned = PINNED_LIST_KEYS.includes(t.key);
+              const isHidden = hidden.includes(t.key);
+              return (
+                <div
+                  key={t.key}
+                  className={cn(
+                    "flex min-h-[52px] items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5",
+                    isHidden && "opacity-50"
+                  )}
+                >
+                  <Link to={`/lists/${t.key}`} className="flex min-w-0 flex-1 items-center gap-3 px-1 py-1.5">
+                    <span className={cn("grid h-9 w-9 place-items-center rounded-[6px] border", t.tone)}>
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        {t.plural || t.label}
+                        {isPinned && <Pin className="h-3 w-3 text-primary" aria-label="Pinned" />}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{c} active</p>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => toggleHidden(t.key)}
+                    className="grid h-10 w-10 place-items-center rounded-[6px] text-muted-foreground hover:bg-accent"
+                    aria-label={isHidden ? `Show ${t.label}` : `Hide ${t.label}`}
+                    title={isHidden ? "Show on lists overview" : "Hide from lists overview"}
+                  >
+                    {isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
     );
   }
 
   if (type === "all") {
-    const sorted = applyPeopleFilters([...all].sort(sortItems), filterPerson, filterResponsible);
+    const sorted = applyPeopleFilters(
+      [...all].filter((i) => i.type !== "grocery").sort(sortItems),
+      filterPerson,
+      filterResponsible
+    );
+    const groceryOpen = all.filter((i) => i.type === "grocery" && !i.completed).length;
     const active = sorted.filter((i) => !i.completed);
     const done = sorted.filter((i) => i.completed);
     const byType = {};
@@ -253,7 +296,7 @@ export default function Lists() {
       const key = it.type || "todo";
       (byType[key] = byType[key] || []).push(it);
     });
-    const typeOrder = ITEM_TYPES.map((t) => t.key).filter((k) => (byType[k] || []).length);
+    const typeOrder = PLANNING_TYPES.map((t) => t.key).filter((k) => (byType[k] || []).length);
     const orphanKeys = Object.keys(byType).filter((k) => !ITEM_TYPE_MAP[k]);
 
     return (
@@ -268,7 +311,18 @@ export default function Lists() {
             All
           </h1>
         </div>
-        <p className="text-sm text-muted-foreground mb-3">{active.length} active · {done.length} done</p>
+        <p className="text-sm text-muted-foreground mb-2">{active.length} active · {done.length} done · groceries excluded</p>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Link
+            to="/lists/grocery"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-[6px] border border-border bg-card px-3 text-xs font-medium text-foreground hover:bg-accent"
+          >
+            <ShoppingCart className="h-3.5 w-3.5" />
+            Open shopping list
+            {groceryOpen > 0 ? ` (${groceryOpen})` : ""}
+          </Link>
+          {groceryOpen > 0 && <ShopModeLink compact />}
+        </div>
         <TypePicker active="all" />
         <ListsFilterBar
           person={filterPerson}
@@ -302,14 +356,7 @@ export default function Lists() {
                   </span>
                 }
               >
-                {key === "grocery" ? (
-                  <div className="space-y-2">
-                    <ShopModeLink compact />
-                    <GroceryView items={byType[key]} listProps={selection.listProps} />
-                  </div>
-                ) : (
-                  <ItemList items={byType[key]} {...selection.listProps} />
-                )}
+                <ItemList items={byType[key]} {...selection.listProps} />
               </CollapsibleListSection>
             );
           })}
@@ -325,7 +372,7 @@ export default function Lists() {
           ))}
           {!active.length && (
             <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-              No items yet. Add some with Quick Add.
+              No planning items yet. Add some with Quick Add.
             </div>
           )}
         </div>
@@ -377,7 +424,7 @@ export default function Lists() {
           <span className="text-muted-foreground">/</span>
           <h1 className="page-title flex items-center gap-2">
             <span className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", TI.tone)}><TI.icon className="h-4 w-4" /></span>
-            {TI.plural || TI.label}
+            {type === "grocery" ? "Groceries" : (TI.plural || TI.label)}
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -389,6 +436,11 @@ export default function Lists() {
           )}
         </div>
       </div>
+      {type === "grocery" && (
+        <p className="text-xs text-muted-foreground mb-2">
+          Shopping list — aisle groups below. Use Start shopping for a full-screen checklist.
+        </p>
+      )}
       {type === "project_item" && (
         <p className="text-xs text-muted-foreground mb-2">
           These are individual project-typed items. Manage project containers on{" "}

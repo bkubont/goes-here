@@ -17,6 +17,7 @@ import { downloadDayIcs } from "@/lib/ics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
+import { resolveCalendarView } from "@/lib/calendarView";
 
 const POOL_TYPES = new Set([
   "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
@@ -51,16 +52,8 @@ export default function CalendarPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
   const tabParam = searchParams.get("tab");
-  // Phone defaults to Agenda; desktop to Day.
-  const view = viewParam === "month"
-    ? "month"
-    : viewParam === "day"
-      ? "day"
-      : viewParam === "week"
-        ? "week"
-        : viewParam === "agenda"
-          ? "agenda"
-          : (isMobile ? "agenda" : "day");
+  // URL ?view= wins; otherwise Settings default; else agenda (mobile) / day (desktop).
+  const view = resolveCalendarView(viewParam, { isMobile });
   const showUnscheduled = tabParam === "unscheduled" || (!isMobile && view === "day");
 
   const [cursor, setCursor] = React.useState(() => {
