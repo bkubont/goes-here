@@ -1,10 +1,13 @@
 import React from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { LayoutList, Pin, EyeOff, Eye, ShoppingCart, Plus } from "lucide-react";
+import { LayoutList, EyeOff, Eye, ShoppingCart, Plus, Settings } from "lucide-react";
 import { useItems, usePeople } from "@/lib/queries";
 import {
-  ITEM_TYPE_MAP, GROCERY_CATEGORIES, PINNED_LIST_KEYS, PLANNING_TYPES,
+  ITEM_TYPE_MAP, GROCERY_CATEGORIES,
 } from "@/lib/itemTypes";
+import {
+  loadListPrefs, visiblePlanningTypes, orderedPlanningTypes, setListTypeHidden,
+} from "@/lib/listPrefs";
 import ItemList from "@/components/ItemList";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import CollapsibleListSection from "@/components/CollapsibleListSection";
@@ -15,17 +18,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
 import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
-
-const HIDDEN_KEY = "goeshere.lists.hidden";
-
-function loadHidden() {
-  try {
-    const raw = localStorage.getItem(HIDDEN_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
 
 function sortItems(a, b) {
   const byDone = Number(a.completed) - Number(b.completed);
@@ -38,7 +30,7 @@ function sortItems(a, b) {
   return String(bUp).localeCompare(String(aUp));
 }
 
-function TypePicker({ active }) {
+function TypePicker({ active, visibleTypes = [] }) {
   return (
     <div className="flex flex-wrap gap-1.5 mb-3">
       <Link
@@ -63,7 +55,7 @@ function TypePicker({ active }) {
       >
         Shopping
       </Link>
-      {PLANNING_TYPES.map((t) => (
+      {visibleTypes.map((t) => (
         <Link
           key={t.key}
           to={`/lists/${t.key}`}
@@ -131,7 +123,7 @@ export default function Lists() {
   const { data: items } = useItems({});
   const { data: people } = usePeople();
   const all = items || [];
-  const [hidden, setHidden] = React.useState(loadHidden);
+  const [listPrefs, setListPrefs] = React.useState(loadListPrefs);
   const [showHidden, setShowHidden] = React.useState(false);
   const [giftDraft, setGiftDraft] = React.useState(null);
   const selection = useListSelection(type || "overview");
@@ -139,6 +131,8 @@ export default function Lists() {
   const personFromUrl = searchParams.get("person");
   const [filterPerson, setFilterPerson] = React.useState(personFromUrl || saved.person || "all");
   const [filterResponsible, setFilterResponsible] = React.useState(saved.responsible || "all");
+  const visibleTypes = React.useMemo(() => visiblePlanningTypes(listPrefs), [listPrefs]);
+  const orderedTypes = React.useMemo(() => orderedPlanningTypes(listPrefs), [listPrefs]);
 
   React.useEffect(() => {
     if (personFromUrl) setFilterPerson(personFromUrl);
@@ -171,21 +165,14 @@ export default function Lists() {
   }, [type, filterPerson, filterResponsible]);
 
   function toggleHidden(key) {
-    setHidden((prev) => {
-      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-      localStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
-      return next;
-    });
+    const isHidden = listPrefs.hidden.includes(key);
+    setListPrefs(setListTypeHidden(key, !isHidden));
   }
 
   if (!type) {
     const groceryActive = all.filter((i) => i.type === "grocery" && !i.completed).length;
     const planningActive = all.filter((i) => i.type !== "grocery" && !i.completed).length;
-    const visible = PLANNING_TYPES.filter((t) => showHidden || !hidden.includes(t.key));
-    const pinnedFirst = [
-      ...visible.filter((t) => PINNED_LIST_KEYS.includes(t.key)),
-      ...visible.filter((t) => !PINNED_LIST_KEYS.includes(t.key)),
-    ];
+    const hubTypes = showHidden ? orderedTypes : visibleTypes;
     const groceryTI = ITEM_TYPE_MAP.grocery;
 
     return (
@@ -194,15 +181,21 @@ export default function Lists() {
           <div>
             <h1 className="page-title mb-1">Lists</h1>
             <p className="text-sm text-muted-foreground">
-              Shopping stays separate from planning lists.{" "}
-              <span className="text-foreground/80">Project items</span> are a list type;{" "}
-              <Link to="/projects" className="text-primary hover:underline">Projects</Link> group work across types.
+              Shopping stays separate from planning lists. Reorder or hide types in{" "}
+              <Link to="/settings" className="text-primary hover:underline">Settings → Lists</Link>.
             </p>
           </div>
-          <Button type="button" variant="outline" size="sm" className="min-h-[40px]" onClick={() => setShowHidden((v) => !v)}>
-            {showHidden ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
-            {showHidden ? "Hide empty types" : "Show all types"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" className="min-h-[40px]" asChild>
+              <Link to="/settings#lists">
+                <Settings className="h-4 w-4 mr-1" /> Manage
+              </Link>
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="min-h-[40px]" onClick={() => setShowHidden((v) => !v)}>
+              {showHidden ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
+              {showHidden ? "Hide hidden types" : "Show hidden types"}
+            </Button>
+          </div>
         </div>
 
         <section className="mt-6">
@@ -241,11 +234,10 @@ export default function Lists() {
               </div>
             </Link>
 
-            {pinnedFirst.map((t) => {
+            {hubTypes.map((t) => {
               const Icon = t.icon;
               const c = all.filter((i) => i.type === t.key && !i.completed).length;
-              const isPinned = PINNED_LIST_KEYS.includes(t.key);
-              const isHidden = hidden.includes(t.key);
+              const isHidden = listPrefs.hidden.includes(t.key);
               return (
                 <div
                   key={t.key}
@@ -259,10 +251,7 @@ export default function Lists() {
                       <Icon className="h-[18px] w-[18px]" />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium flex items-center gap-1.5">
-                        {t.plural || t.label}
-                        {isPinned && <Pin className="h-3 w-3 text-primary" aria-label="Pinned" />}
-                      </p>
+                      <p className="text-sm font-medium">{t.plural || t.label}</p>
                       <p className="text-xs text-muted-foreground">{c} active</p>
                     </div>
                   </Link>
@@ -298,7 +287,7 @@ export default function Lists() {
       const key = it.type || "todo";
       (byType[key] = byType[key] || []).push(it);
     });
-    const typeOrder = PLANNING_TYPES.map((t) => t.key).filter((k) => (byType[k] || []).length);
+    const typeOrder = orderedTypes.map((t) => t.key).filter((k) => (byType[k] || []).length);
     const orphanKeys = Object.keys(byType).filter((k) => !ITEM_TYPE_MAP[k]);
 
     return (
@@ -325,7 +314,7 @@ export default function Lists() {
           </Link>
           {groceryOpen > 0 && <ShopModeLink compact />}
         </div>
-        <TypePicker active="all" />
+        <TypePicker active="all" visibleTypes={visibleTypes} />
         <ListsFilterBar
           person={filterPerson}
           responsible={filterResponsible}
@@ -468,7 +457,7 @@ export default function Lists() {
       ) : (
         <div className="mb-3" />
       )}
-      <TypePicker active={type} />
+      <TypePicker active={type} visibleTypes={visibleTypes} />
       <ListsFilterBar
         person={filterPerson}
         responsible={filterResponsible}

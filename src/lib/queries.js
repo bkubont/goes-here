@@ -80,6 +80,9 @@ export async function invalidateAll() {
     queryClientInstance.invalidateQueries({ queryKey: ["attachments"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["items-trash"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["familyMembers"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["boards"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["boardColumns"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["boardSwimlanes"] }),
   ]);
   await Promise.all([
     queryClientInstance.refetchQueries({ queryKey: ["items"], type: "all" }),
@@ -88,6 +91,9 @@ export async function invalidateAll() {
     queryClientInstance.refetchQueries({ queryKey: ["attachments"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["familyMembers"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["boards"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["boardColumns"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["boardSwimlanes"], type: "all" }),
   ]);
 }
 
@@ -177,6 +183,38 @@ export function useFamilyMembers() {
   });
 }
 
+export function useBoards() {
+  return useQuery({
+    queryKey: ["boards"],
+    queryFn: async () => entities.Board.list("position", 200),
+    staleTime: 0,
+  });
+}
+
+export function useBoardColumns(boardId) {
+  return useQuery({
+    queryKey: boardId ? ["boardColumns", { board_id: boardId }] : ["boardColumns", "none"],
+    queryFn: async () => {
+      if (!boardId) return [];
+      return entities.BoardColumn.filter({ board_id: boardId }, "position", 100);
+    },
+    enabled: !!boardId,
+    staleTime: 0,
+  });
+}
+
+export function useBoardSwimlanes(boardId) {
+  return useQuery({
+    queryKey: boardId ? ["boardSwimlanes", { board_id: boardId }] : ["boardSwimlanes", "none"],
+    queryFn: async () => {
+      if (!boardId) return [];
+      return entities.BoardSwimlane.filter({ board_id: boardId }, "position", 100);
+    },
+    enabled: !!boardId,
+    staleTime: 0,
+  });
+}
+
 export function patchFamilyMemberCaches(recipe) {
   const entries = queryClientInstance.getQueriesData({ queryKey: ["familyMembers"] });
   for (const [key, data] of entries) {
@@ -195,6 +233,9 @@ export function useInvalidate() {
       qc.invalidateQueries({ queryKey: ["attachments"] }),
       qc.invalidateQueries({ queryKey: ["items-trash"] }),
       qc.invalidateQueries({ queryKey: ["familyMembers"] }),
+      qc.invalidateQueries({ queryKey: ["boards"] }),
+      qc.invalidateQueries({ queryKey: ["boardColumns"] }),
+      qc.invalidateQueries({ queryKey: ["boardSwimlanes"] }),
     ]);
     await Promise.all([
       qc.refetchQueries({ queryKey: ["items"], type: "all" }),
@@ -203,6 +244,9 @@ export function useInvalidate() {
       qc.refetchQueries({ queryKey: ["attachments"], type: "all" }),
       qc.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
       qc.refetchQueries({ queryKey: ["familyMembers"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["boards"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["boardColumns"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["boardSwimlanes"], type: "all" }),
     ]);
   };
 }

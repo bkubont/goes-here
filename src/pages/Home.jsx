@@ -2,13 +2,14 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift, History,
-  ShoppingCart,
+  ShoppingCart, CalendarDays, Columns3,
 } from "lucide-react";
 import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import {
-  ITEM_TYPE_MAP, PINNED_LIST_KEYS, isToday, isUpcoming, isOverdue, parseDay, toDayKey,
+  ITEM_TYPE_MAP, isToday, isUpcoming, isOverdue, parseDay, toDayKey,
 } from "@/lib/itemTypes";
+import { loadListPrefs, visiblePlanningTypes } from "@/lib/listPrefs";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import {
   upcomingBirthdays, formatBirthdayCountdown, formatBirthdayShort,
@@ -166,11 +167,13 @@ export default function Home() {
     },
   ].filter(Boolean);
 
-  const pinned = PINNED_LIST_KEYS.map((key) => {
-    const t = ITEM_TYPE_MAP[key];
-    const count = all.filter((i) => i.type === key && !i.completed).length;
+  const listPrefs = React.useMemo(() => loadListPrefs(), []);
+  const visibleLists = React.useMemo(() => visiblePlanningTypes(listPrefs), [listPrefs]);
+
+  const pinned = visibleLists.map((t) => {
+    const count = all.filter((i) => i.type === t.key && !i.completed).length;
     return { ...t, count };
-  }).filter((t) => t.count > 0 || ["todo", "bill"].includes(t.key));
+  }).filter((t) => t.count > 0 || ["todo", "bill"].includes(t.key)).slice(0, 6);
 
   const groceryOpen = all.filter((i) => i.type === "grocery" && !i.completed).length;
 
@@ -251,6 +254,34 @@ export default function Home() {
             Showing today&apos;s items assigned to {meName}.
           </p>
         )}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <Link
+            to="/calendar?view=day"
+            className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
+          >
+            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-primary text-primary-foreground">
+              <CalendarDays className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Plan today</p>
+              <p className="text-xs text-muted-foreground">Time-block your day on Calendar</p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+          </Link>
+          <Link
+            to="/board"
+            className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
+          >
+            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-primary text-primary-foreground">
+              <Columns3 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Boards</p>
+              <p className="text-xs text-muted-foreground">Kanban by status, project, or person</p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+          </Link>
+        </div>
       </header>
 
       {attention.length > 0 && (
@@ -418,8 +449,8 @@ export default function Home() {
 
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-heading text-base font-semibold">Lists</h2>
-          <Link to="/lists" className="text-sm text-primary flex items-center gap-1 hover:underline min-h-[44px]">
+          <h2 className="font-heading text-base font-semibold text-muted-foreground">Lists</h2>
+          <Link to="/lists" className="text-sm text-muted-foreground flex items-center gap-1 hover:underline min-h-[44px]">
             View all <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>

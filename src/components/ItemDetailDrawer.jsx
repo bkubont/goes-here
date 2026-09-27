@@ -21,7 +21,10 @@ import {
   ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey,
 } from "@/lib/itemTypes";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll, usePeople, useProjects, patchItemsCaches } from "@/lib/queries";
+import { boardColumnPatch, columnForItem, sortByPosition } from "@/lib/boards";
+import {
+  invalidateAll, usePeople, useProjects, useBoards, useBoardColumns, patchItemsCaches,
+} from "@/lib/queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import {
@@ -73,6 +76,10 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const isMobile = useIsMobile();
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
+  const { data: boards } = useBoards();
+  const boardId = item?.board_id || (boards && boards.length ? sortByPosition(boards)[0]?.id : null);
+  const { data: boardColumnsRaw } = useBoardColumns(open ? boardId : null);
+  const boardColumns = React.useMemo(() => sortByPosition(boardColumnsRaw), [boardColumnsRaw]);
   const [form, setForm] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
@@ -190,6 +197,13 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         board_status: form.board_status || "backlog",
         reminder_offset: form.reminder_offset || null,
       };
+      if (boardId) payload.board_id = boardId;
+      if (boardColumns.length) {
+        const col =
+          boardColumns.find((c) => c.status_key === (form.board_status || "backlog")) ||
+          columnForItem({ ...item, ...form }, boardColumns);
+        if (col) Object.assign(payload, boardColumnPatch(col, { boardId }));
+      }
       if (durationRaw != null && !Number.isNaN(durationRaw) && durationRaw > 0) {
         payload.duration_minutes = Math.round(durationRaw);
         if (durationChanged) payload.duration_source = "manual";
@@ -202,8 +216,16 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         Object.assign(payload, completionPatch({ ...item, ...form }, !!form.completed));
       } else {
         payload.completed = !!form.completed;
-        if (form.completed && form.board_status !== "done") payload.board_status = "done";
-        if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
+        if (form.completed && form.board_status !== "done") {
+          const doneCol = boardColumns.find((c) => c.is_done);
+          payload.board_status = doneCol?.status_key || "done";
+          if (doneCol) Object.assign(payload, boardColumnPatch(doneCol, { boardId }));
+        }
+        if (!form.completed && (form.board_status === "done" || boardColumns.find((c) => c.status_key === form.board_status)?.is_done)) {
+          const openCol = boardColumns.find((c) => !c.is_done) || boardColumns[0];
+          payload.board_status = openCol?.status_key || "backlog";
+          if (openCol) Object.assign(payload, boardColumnPatch(openCol, { boardId }));
+        }
       }
 
       if (isDraft) {
@@ -441,13 +463,31 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
 
       <div className="space-y-1.5">
         <Label>Status</Label>
-        <Select value={form.board_status || "backlog"} onValueChange={(v) => set({ board_status: v, completed: v === "done" })}>
+        <Select
+          value={form.board_status || (boardColumns[0]?.status_key) || "backlog"}
+          onValueChange={(v) => {
+            const col = boardColumns.find((c) => c.status_key === v);
+            set({
+              board_status: v,
+              completed: col ? !!col.is_done : v === "done",
+              board_column_id: col?.id,
+            });
+          }}
+        >
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="backlog">Backlog</SelectItem>
-            <SelectItem value="ready">Ready</SelectItem>
-            <SelectItem value="doing">Doing</SelectItem>
-            <SelectItem value="done">Done</SelectItem>
+            {boardColumns.length > 0 ? (
+              boardColumns.map((c) => (
+                <SelectItem key={c.id} value={c.status_key}>{c.name}</SelectItem>
+              ))
+            ) : (
+              <>
+                <SelectItem value="backlog">Backlog</SelectItem>
+                <SelectItem value="ready">Ready</SelectItem>
+                <SelectItem value="doing">Doing</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+              </>
+            )}
           </SelectContent>
         </Select>
       </div>

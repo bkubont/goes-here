@@ -12,12 +12,13 @@ import QuickAdd from "@/components/QuickAdd";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ItemsLoadMoreBanner from "@/components/ItemsLoadMoreBanner";
 
+// Calendar + Board are primary product surfaces; Lists/Shopping secondary.
 const DESKTOP_NAV = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
+  { to: "/board", label: "Board", icon: Columns3 },
   { to: "/lists", label: "Lists", icon: LayoutList },
   { to: "/inbox", label: "Inbox", icon: Inbox },
-  { to: "/board", label: "Board", icon: Columns3 },
   { to: "/people", label: "People", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/search", label: "Search", icon: Search },
@@ -27,11 +28,11 @@ const DESKTOP_NAV = [
 const MOBILE_PRIMARY = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
+  { to: "/board", label: "Board", icon: Columns3 },
   { to: "/lists", label: "Lists", icon: LayoutList },
-  { to: "/inbox", label: "Inbox", icon: Inbox },
 ];
 
-const MORE_ROUTES = ["/board", "/people", "/projects", "/settings", "/search"];
+const MORE_ROUTES = ["/inbox", "/people", "/projects", "/settings", "/search"];
 
 function BrandMark({ size = 36 }) {
   return (
@@ -241,7 +242,7 @@ export default function Layout() {
             <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close more menu" onClick={() => setMoreOpen(false)} />
             <div className="absolute bottom-[calc(52px+env(safe-area-inset-bottom))] left-3 right-3 rounded-xl border border-border bg-card p-2 shadow-lg">
               {[
-                { to: "/board", label: "Board", icon: Columns3 },
+                { to: "/inbox", label: "Inbox", icon: Inbox },
                 { to: "/people", label: "People", icon: Users },
                 { to: "/projects", label: "Projects", icon: FolderKanban },
                 { to: "/settings", label: "Settings", icon: Settings },
@@ -254,13 +255,18 @@ export default function Layout() {
                     onClick={() => setMoreOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        "flex min-h-[44px] items-center gap-3 rounded-[6px] px-3 py-2.5 text-sm font-medium",
+                        "relative flex min-h-[44px] items-center gap-3 rounded-[6px] px-3 py-2.5 text-sm font-medium",
                         isActive ? "bg-primary/10 text-primary" : "text-foreground hover:bg-accent"
                       )
                     }
                   >
                     <Icon className="h-5 w-5" />
                     {n.label}
+                    {n.to === "/inbox" && inboxCount > 0 && (
+                      <span className="ml-auto rounded-[4px] bg-attention px-1.5 py-0.5 text-[10px] font-semibold text-attention-foreground">
+                        {inboxCount}
+                      </span>
+                    )}
                   </NavLink>
                 );
               })}
