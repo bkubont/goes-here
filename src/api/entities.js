@@ -10,9 +10,13 @@ async function run(query) {
 }
 
 // sort is a column name, prefixed with "-" for descending (e.g. "-created_date").
-function select(table, match, sort, limit) {
+function select(table, match, sort, limit, { includeDeleted = false } = {}) {
   let q = supabase.from(table).select('*');
   if (match) q = q.match(match);
+  // Soft-deleted items stay out of normal lists unless explicitly requested.
+  if (table === 'items' && !includeDeleted) {
+    q = q.is('deleted_at', null);
+  }
   if (sort) {
     const desc = sort.startsWith('-');
     q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
@@ -23,17 +27,49 @@ function select(table, match, sort, limit) {
 
 function table(name) {
   return {
-    list: (sort, limit) => select(name, null, sort, limit),
-    filter: (match, sort, limit) => select(name, match, sort, limit),
+    list: (sort, limit, options) => select(name, null, sort, limit, options),
+    filter: (match, sort, limit, options) => select(name, match, sort, limit, options),
     create: (row) => run(supabase.from(name).insert(row).select().single()),
     bulkCreate: (rows) => run(supabase.from(name).insert(rows).select()),
     update: (id, patch) => run(supabase.from(name).update(patch).eq('id', id).select().single()),
-    delete: (id) => run(supabase.from(name).delete().eq('id', id)),
+    delete: (id) => {
+      // Items use soft-delete so trash/restore works; other tables hard-delete.
+      if (name === 'items') {
+        return run(
+          supabase
+            .from(name)
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single()
+        );
+      }
+      return run(supabase.from(name).delete().eq('id', id));
+    },
   };
 }
 
+const itemTable = table('items');
+
 export const entities = {
-  Item: table('items'),
+  Item: {
+    ...itemTable,
+    /** Soft-deleted rows only (trash). */
+    listDeleted: (sort = '-deleted_at', limit = 200) => {
+      let q = supabase.from('items').select('*').not('deleted_at', 'is', null);
+      if (sort) {
+        const desc = sort.startsWith('-');
+        q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
+      }
+      if (limit) q = q.limit(limit);
+      return run(q);
+    },
+    restore: (id) =>
+      run(supabase.from('items').update({ deleted_at: null }).eq('id', id).select().single()),
+    /** Permanent delete (after confirm in trash). */
+    purge: (id) => run(supabase.from('items').delete().eq('id', id)),
+  },
   Person: table('people'),
   Project: table('projects'),
+  Attachment: table('attachments'),
 };

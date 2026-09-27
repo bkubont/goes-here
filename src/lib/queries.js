@@ -37,6 +37,14 @@ export function patchProjectsCaches(recipe) {
   }
 }
 
+export function patchAttachmentsCaches(recipe) {
+  const entries = queryClientInstance.getQueriesData({ queryKey: ["attachments"] });
+  for (const [key, data] of entries) {
+    if (!Array.isArray(data)) continue;
+    queryClientInstance.setQueryData(key, recipe(data));
+  }
+}
+
 /**
  * Mark lists stale and force a refetch so create/update/delete show up without a full reload.
  * Awaits refetch of matching queries (active + inactive) — fire-and-forget invalidation
@@ -47,11 +55,15 @@ export async function invalidateAll() {
     queryClientInstance.invalidateQueries({ queryKey: ["items"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["people"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["projects"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["attachments"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["items-trash"] }),
   ]);
   await Promise.all([
     queryClientInstance.refetchQueries({ queryKey: ["items"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["people"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["projects"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["attachments"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
   ]);
 }
 
@@ -64,6 +76,29 @@ export function useItems(filter = {}, options = {}) {
       return entities.Item.filter(stable, "-created_date", 1000);
     },
     // Prefer freshness after local writes; invalidateAll still forces refetch.
+    staleTime: 0,
+    ...options,
+  });
+}
+
+/** Soft-deleted items (Settings trash). */
+export function useDeletedItems(options = {}) {
+  return useQuery({
+    queryKey: ["items-trash"],
+    queryFn: async () => entities.Item.listDeleted("-deleted_at", 200),
+    staleTime: 0,
+    ...options,
+  });
+}
+
+export function useAttachments(itemId, options = {}) {
+  return useQuery({
+    queryKey: itemId ? ["attachments", { item_id: itemId }] : ["attachments", "none"],
+    queryFn: async () => {
+      if (!itemId) return [];
+      return entities.Attachment.filter({ item_id: itemId }, "-created_at", 50);
+    },
+    enabled: !!itemId,
     staleTime: 0,
     ...options,
   });
@@ -92,11 +127,15 @@ export function useInvalidate() {
       qc.invalidateQueries({ queryKey: ["items"] }),
       qc.invalidateQueries({ queryKey: ["people"] }),
       qc.invalidateQueries({ queryKey: ["projects"] }),
+      qc.invalidateQueries({ queryKey: ["attachments"] }),
+      qc.invalidateQueries({ queryKey: ["items-trash"] }),
     ]);
     await Promise.all([
       qc.refetchQueries({ queryKey: ["items"], type: "all" }),
       qc.refetchQueries({ queryKey: ["people"], type: "all" }),
       qc.refetchQueries({ queryKey: ["projects"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["attachments"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
     ]);
   };
 }

@@ -8,6 +8,7 @@ import { ITEM_TYPES, ITEM_TYPE_MAP, STATUS_LABELS } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
 import { boardStatusPatch, resolveBlockMinutes } from "@/lib/estimateDuration";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import { Button } from "@/components/ui/button";
 import {
@@ -118,6 +119,12 @@ export default function Board() {
 
   async function moveToStatus(item, newStatus) {
     if (statusOf(item) === newStatus) return;
+    const previous = {
+      completed: !!item.completed,
+      completed_date: item.completed_date ?? null,
+      board_status: statusOf(item),
+      actual_duration_minutes: item.actual_duration_minutes ?? null,
+    };
     try {
       const patch = boardStatusPatch(newStatus);
       if (newStatus === "done" && item.duration_minutes != null && item.actual_duration_minutes == null) {
@@ -126,6 +133,32 @@ export default function Board() {
       const row = await entities.Item.update(item.id, patch);
       patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
       await invalidateAll();
+      if (newStatus === "done" && !item.completed) {
+        toast({
+          title: "Completed",
+          description: item.content,
+          duration: 8000,
+          action: (
+            <ToastAction
+              altText="Undo"
+              onClick={async () => {
+                try {
+                  const restored = await entities.Item.update(item.id, previous);
+                  patchItemsCaches((list) =>
+                    list.map((i) => (i.id === item.id ? { ...i, ...restored } : i))
+                  );
+                  await invalidateAll();
+                  toast({ title: "Restored" });
+                } catch (err) {
+                  toast({ title: "Couldn't undo", description: err.message, variant: "destructive" });
+                }
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+      }
     } catch (e) {
       toast({ title: "Move failed", description: e.message, variant: "destructive" });
     }

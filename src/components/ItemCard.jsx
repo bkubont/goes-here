@@ -5,14 +5,30 @@ import { formatDuration } from "@/lib/durationDefaults";
 import { completionPatch } from "@/lib/estimateDuration";
 import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { Check, CalendarDays, UserCheck, FolderKanban, AlertCircle, Repeat, Clock, Bell } from "lucide-react";
+import {
+  Check, CalendarDays, UserCheck, FolderKanban, AlertCircle, Repeat, Clock, Bell, Paperclip,
+} from "lucide-react";
 import { formatRecurrenceSummary } from "@/lib/recurring";
 import { reminderLabel, isReminderDue } from "@/lib/reminders";
+import { toast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+
+async function undoCompletion(itemId, previous) {
+  try {
+    const row = await entities.Item.update(itemId, previous);
+    patchItemsCaches((list) => list.map((i) => (i.id === itemId ? { ...i, ...row } : i)));
+    await invalidateAll();
+    toast({ title: "Restored", description: "Marked incomplete again." });
+  } catch (e) {
+    toast({ title: "Couldn't undo", description: e.message, variant: "destructive" });
+  }
+}
 
 export default function ItemCard({ item, onOpen }) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
   const overdue = !item.completed && (isOverdue(item.date) || isOverdue(item.due_date));
   const durationLabel = formatDuration(item.duration_minutes);
+  const attachmentCount = Number(item.attachment_count) || 0;
   const timeLine = item.date
     ? `${formatDate(item.date)}${item.time ? ` · ${formatTime(item.time)}` : ""}`
     : item.due_date
@@ -22,11 +38,32 @@ export default function ItemCard({ item, onOpen }) {
   async function toggle(e) {
     e.stopPropagation();
     if (item._recurringOccurrence) return;
-    const patch = completionPatch(item, !item.completed);
+    const nextCompleted = !item.completed;
+    const patch = completionPatch(item, nextCompleted);
+    const previous = {
+      completed: !!item.completed,
+      completed_date: item.completed_date ?? null,
+      board_status: item.board_status || (item.completed ? "done" : "backlog"),
+      actual_duration_minutes: item.actual_duration_minutes ?? null,
+      purchased: item.purchased,
+      payment_status: item.payment_status,
+    };
     try {
       const row = await entities.Item.update(item.id, patch);
       patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
       await invalidateAll();
+      if (nextCompleted) {
+        toast({
+          title: "Completed",
+          description: item.content,
+          duration: 8000,
+          action: (
+            <ToastAction altText="Undo" onClick={() => undoCompletion(item.id, previous)}>
+              Undo
+            </ToastAction>
+          ),
+        });
+      }
     } catch {
       /* bubble */
     }
@@ -117,6 +154,15 @@ export default function ItemCard({ item, onOpen }) {
               isReminderDue(item) ? "border-attention/50 bg-attention/15 text-attention-foreground" : "border-border"
             )}>
               <Bell className="h-3 w-3" /> {reminderLabel(item.reminder_offset) || "Reminder"}
+            </span>
+          )}
+          {attachmentCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-[4px] border border-border px-1.5 py-0.5"
+              title={`${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`}
+            >
+              <Paperclip className="h-3 w-3" />
+              {attachmentCount > 1 ? attachmentCount : null}
             </span>
           )}
           {item.inbox && (
