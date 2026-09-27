@@ -24,6 +24,7 @@ import { completionPatch } from "@/lib/estimateDuration";
 import { invalidateAll, usePeople, useProjects, patchItemsCaches } from "@/lib/queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { useDevicePerson } from "@/lib/devicePerson";
 import {
   RECURRENCE_CHOICES,
   formatRecurrenceSummary,
@@ -73,22 +74,45 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const isMobile = useIsMobile();
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
+  const meName = useDevicePerson();
+  const meNameRef = React.useRef(meName);
+  meNameRef.current = meName;
   const [form, setForm] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
   const peopleNames = (people || []).map((p) => p.name);
   const projectNames = (projects || []).map((p) => p.name);
 
+  // Initialize form only when the drawer opens or the item identity changes.
+  // Do not depend on meName — that resolves async and must not wipe typed fields.
   React.useEffect(() => {
     if (open && item) {
-      setForm(buildForm(item));
-      setMoreOpen(!!item.recurring || !!item.reminder_offset || !!item.notes);
+      const next = buildForm(item);
+      // New drafts only: default Assigned to from Settings “This device is”
+      // when meName is already known. Late arrivals are handled below.
+      const knownMe = meNameRef.current;
+      if (item._draft && next && !String(next.responsible_name || "").trim() && knownMe) {
+        next.responsible_name = knownMe;
+      }
+      setForm(next);
+      // Create mode shows type + more fields up front (“all the options”).
+      setMoreOpen(!!item._draft || !!item.recurring || !!item.reminder_offset || !!item.notes);
     }
     if (!open) {
       const t = setTimeout(() => setForm(null), 200);
       return () => clearTimeout(t);
     }
   }, [item, open]);
+
+  // When device person arrives after a new draft opened with empty assignee,
+  // fill default only — never rebuild the whole form or touch existing items.
+  React.useEffect(() => {
+    if (!open || !item?._draft || !meName) return;
+    setForm((f) => {
+      if (!f || String(f.responsible_name || "").trim()) return f;
+      return { ...f, responsible_name: meName };
+    });
+  }, [meName, open, item]);
 
   const handleOpenChange = React.useCallback((next) => {
     if (!next) onOpenChange?.(false);
@@ -404,6 +428,20 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         <Input id="item-title" value={form.content} onChange={(e) => set({ content: e.target.value })} />
       </div>
 
+      {isDraft && (
+        <div className="space-y-1.5">
+          <Label>Type</Label>
+          <Select value={form.type} onValueChange={(v) => set({ type: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ITEM_TYPES.map((t) => (
+                <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Scheduled date</Label>
@@ -488,18 +526,20 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       {moreOpen && (
         <div className="space-y-4 rounded-xl border border-border bg-card p-3">
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={form.type} onValueChange={(v) => set({ type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ITEM_TYPES.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
+            {!isDraft && (
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={form.type} onValueChange={(v) => set({ type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ITEM_TYPES.map((t) => (
+                      <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className={cn("space-y-1.5", isDraft && "col-span-2")}>
               <Label>Priority</Label>
               <Select value={form.priority || "medium"} onValueChange={(v) => set({ priority: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
