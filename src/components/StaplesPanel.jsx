@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { useDevicePerson } from "@/lib/devicePerson";
 
 /**
  * Save current incomplete groceries as a named template, and add staples back.
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 export default function StaplesPanel({ groceryItems, selectedItems }) {
   const { toast } = useToast();
   const templates = useGroceryTemplates();
+  const meName = useDevicePerson();
   const [name, setName] = React.useState("Weekly staples");
   const [busy, setBusy] = React.useState(false);
   const [open, setOpen] = React.useState(false);
@@ -52,7 +54,7 @@ export default function StaplesPanel({ groceryItems, selectedItems }) {
     }
     setBusy(true);
     try {
-      const rows = stapleRowsToCreate(missing);
+      const rows = stapleRowsToCreate(missing, { responsible_name: meName });
       const created = await entities.Item.bulkCreate(rows);
       const list = Array.isArray(created) ? created : [created];
       patchItemsCaches((prev) => [...list, ...(prev || [])]);
