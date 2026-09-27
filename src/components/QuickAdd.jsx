@@ -157,7 +157,8 @@ export default function QuickAdd({ open, onOpenChange }) {
     const ids = lastCreatedRef.current || [];
     if (!ids.length) return;
     try {
-      await Promise.all(ids.map((id) => entities.Item.delete(id)));
+      // Just-created Quick Add undo: permanent remove (not trash).
+      await Promise.all(ids.map((id) => entities.Item.purge(id)));
       patchItemsCaches((list) => list.filter((i) => !ids.includes(i.id)));
       await invalidateAll();
       lastCreatedRef.current = [];

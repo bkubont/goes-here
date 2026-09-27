@@ -15,12 +15,13 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { entities } from "@/api/entities";
 import {
   ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey,
 } from "@/lib/itemTypes";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll, usePeople, useProjects } from "@/lib/queries";
+import { invalidateAll, usePeople, useProjects, patchItemsCaches } from "@/lib/queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import {
@@ -33,6 +34,7 @@ import {
   oneOffFromOccurrence,
 } from "@/lib/recurring";
 import { REMINDER_OPTIONS, formatReminderState } from "@/lib/reminders";
+import ItemAttachments from "@/components/ItemAttachments";
 
 function buildForm(item) {
   if (!item) return null;
@@ -203,7 +205,40 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       }
       await entities.Item.update(recordId, payload);
       await invalidateAll();
-      if (item.recurring || payload.recurring) {
+      if (completedChanged && payload.completed) {
+        const previous = {
+          completed: !!item.completed,
+          completed_date: item.completed_date ?? null,
+          board_status: item.board_status || "backlog",
+          actual_duration_minutes: item.actual_duration_minutes ?? null,
+          purchased: item.purchased,
+          payment_status: item.payment_status,
+        };
+        toast({
+          title: "Completed",
+          description: form.content,
+          duration: 8000,
+          action: (
+            <ToastAction
+              altText="Undo"
+              onClick={async () => {
+                try {
+                  const row = await entities.Item.update(recordId, previous);
+                  patchItemsCaches((list) =>
+                    list.map((i) => (i.id === recordId ? { ...i, ...row } : i))
+                  );
+                  await invalidateAll();
+                  toast({ title: "Restored", description: "Marked incomplete again." });
+                } catch (err) {
+                  toast({ title: "Couldn't undo", description: err.message, variant: "destructive" });
+                }
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+      } else if (item.recurring || payload.recurring) {
         toast({
           title: "Series updated",
           description: "Edits apply to every repeat unless you choose This occurrence only.",
@@ -238,12 +273,35 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   async function remove() {
     if (!item) return;
     if (!confirm(item.recurring || isVirtual
-      ? "Delete this repeating item and all its repeats?"
-      : "Delete this item?")) return;
+      ? "Move this repeating item (and all its repeats) to trash? You can restore it from Settings → Completed & archive."
+      : "Move this item to trash? You can restore it from Settings → Completed & archive.")) return;
     setSaving(true);
     try {
       await entities.Item.delete(recordId);
+      patchItemsCaches((list) => list.filter((i) => i.id !== recordId));
       await invalidateAll();
+      toast({
+        title: "Moved to trash",
+        description: "Restore anytime from Settings → Completed & archive.",
+        duration: 8000,
+        action: (
+          <ToastAction
+            altText="Undo"
+            onClick={async () => {
+              try {
+                const row = await entities.Item.restore(recordId);
+                patchItemsCaches((list) => [row, ...list.filter((i) => i.id !== recordId)]);
+                await invalidateAll();
+                toast({ title: "Restored" });
+              } catch (err) {
+                toast({ title: "Couldn't restore", description: err.message, variant: "destructive" });
+              }
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
       handleOpenChange(false);
     } catch (e) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });
@@ -539,6 +597,10 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
             <Textarea rows={2} value={form.notes || ""} onChange={(e) => set({ notes: e.target.value })} />
           </div>
         </div>
+      )}
+
+      {!isVirtual && (
+        <ItemAttachments itemId={recordId} disabled={saving} />
       )}
     </div>
   );
