@@ -365,7 +365,7 @@ export default function Lists() {
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Shopping
           </h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <ListHubCard
               to="/lists/grocery"
               label="Groceries"
@@ -382,7 +382,7 @@ export default function Lists() {
           <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Lists
           </h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <ListHubCard
               to="/lists/all"
               label="All lists"
