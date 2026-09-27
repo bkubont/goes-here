@@ -108,6 +108,14 @@ export default function ItemCard({ item, onOpen }) {
       >
         <p className={cn("text-sm font-medium leading-snug", item.completed && "line-through")}>
           {item.content}
+          {attachmentCount > 0 && (
+            <span
+              className="ml-1 inline-flex align-text-bottom text-muted-foreground"
+              aria-label="Has attachments"
+            >
+              <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          )}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
           {timeLine && (
@@ -154,15 +162,6 @@ export default function ItemCard({ item, onOpen }) {
               isReminderDue(item) ? "border-attention/50 bg-attention/15 text-attention-foreground" : "border-border"
             )}>
               <Bell className="h-3 w-3" /> {reminderLabel(item.reminder_offset) || "Reminder"}
-            </span>
-          )}
-          {attachmentCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1 rounded-[4px] border border-border px-1.5 py-0.5"
-              title={`${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`}
-            >
-              <Paperclip className="h-3 w-3" />
-              {attachmentCount > 1 ? attachmentCount : null}
             </span>
           )}
           {item.inbox && (
