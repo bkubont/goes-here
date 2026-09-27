@@ -113,3 +113,85 @@
   .radius-card { border-radius: var(--radius); }
   .radius-control { border-radius: var(--radius-control); }
 }
+
+/* Printable shopping list — hide app chrome, show #goeshere-print-root only */
+#goeshere-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0.6in;
+  }
+
+  body.goeshere-printing * {
+    visibility: hidden !important;
+  }
+
+  body.goeshere-printing #goeshere-print-root,
+  body.goeshere-printing #goeshere-print-root * {
+    visibility: visible !important;
+  }
+
+  body.goeshere-printing #goeshere-print-root {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    color: #111;
+    background: #fff;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12pt;
+    line-height: 1.4;
+  }
+
+  body.goeshere-printing #goeshere-print-root h1 {
+    font-size: 18pt;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+  }
+
+  body.goeshere-printing #goeshere-print-root .subtitle {
+    font-size: 10pt;
+    color: #444;
+    margin: 0 0 1rem;
+  }
+
+  body.goeshere-printing #goeshere-print-root h2 {
+    font-size: 11pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0.85rem 0 0.35rem;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 0.15rem;
+  }
+
+  body.goeshere-printing #goeshere-print-root ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  body.goeshere-printing #goeshere-print-root li {
+    padding: 0.2rem 0;
+    break-inside: avoid;
+  }
+
+  body.goeshere-printing #goeshere-print-root .box {
+    font-family: ui-monospace, monospace;
+    margin-right: 0.35rem;
+  }
+
+  body.goeshere-printing #goeshere-print-root .meta {
+    color: #555;
+    font-size: 10pt;
+  }
+
+  body.goeshere-printing #goeshere-print-root .empty {
+    color: #555;
+  }
+}

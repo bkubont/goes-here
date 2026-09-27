@@ -6,7 +6,7 @@ const ITEM_FIELDS = [
   "priority", "notes", "category", "amount", "budget", "purchased", "wrapped",
   "payment_status", "store", "location", "tags", "inbox", "list_name",
   "duration_minutes", "duration_source", "actual_duration_minutes", "board_status",
-  "reminder_offset", "reminder_dismissed_at", "recurring_exceptions",
+  "reminder_offset", "reminder_dismissed_at", "reminder_snooze_until", "recurring_exceptions",
   "deleted_at", "attachment_count",
 ];
 

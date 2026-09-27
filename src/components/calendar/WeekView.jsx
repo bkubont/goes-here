@@ -2,6 +2,7 @@ import React from "react";
 import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
+import { personAccentStyle, resolvePersonColor } from "@/lib/personColor";
 import { cn } from "@/lib/utils";
 
 /** Sunday-start by default; callers pass weekStartsOn from Settings preference. */
@@ -53,17 +54,19 @@ export function unscheduledDueCount(all, dayKey) {
   }).length;
 }
 
-function WeekItemRow({ it, allItems, onOpen }) {
+function WeekItemRow({ it, allItems, onOpen, people }) {
   const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
   const dur = resolveBlockMinutes(it, allItems);
+  const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
   return (
     <button
       type="button"
       onClick={() => onOpen?.(it)}
       className={cn(
-        "w-full text-left rounded-[6px] border border-border px-2 py-1.5 hover:bg-accent/40 transition min-h-[40px]",
+        "w-full text-left rounded-[6px] border border-border px-2 py-1.5 hover:bg-accent/40 transition min-h-[40px] text-foreground",
         it.completed && "opacity-60"
       )}
+      style={accent}
     >
       <div className="flex items-center gap-1.5">
         {it.time && (
@@ -93,6 +96,7 @@ function DayColumn({
   onSelectDay,
   onOpenItem,
   compact,
+  people,
 }) {
   const key = toDayKey(date);
   const isToday = key === todayKey;
@@ -137,7 +141,13 @@ function DayColumn({
       ) : (
         <div className={cn("space-y-1.5", !compact && "flex-1 min-h-0 overflow-y-auto")}>
           {timed.map((it) => (
-            <WeekItemRow key={it.id} it={it} allItems={allItems} onOpen={onOpenItem} />
+            <WeekItemRow
+              key={it.id}
+              it={it}
+              allItems={allItems}
+              onOpen={onOpenItem}
+              people={people}
+            />
           ))}
         </div>
       )}
@@ -156,6 +166,7 @@ export default function WeekView({
   isMobile,
   onSelectDay,
   onOpenItem,
+  people = [],
 }) {
   if (isMobile) {
     return (
@@ -172,6 +183,7 @@ export default function WeekView({
               unscheduledCount={unscheduledDueCount(allItems, key)}
               onSelectDay={onSelectDay}
               onOpenItem={onOpenItem}
+              people={people}
               compact
             />
           );
@@ -195,6 +207,7 @@ export default function WeekView({
                 unscheduledCount={unscheduledDueCount(allItems, key)}
                 onSelectDay={onSelectDay}
                 onOpenItem={onOpenItem}
+                people={people}
                 compact={false}
               />
             </div>

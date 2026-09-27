@@ -322,6 +322,7 @@ export function oneOffFromOccurrence(item, patch = {}) {
     duration_source: patch.duration_source !== undefined ? patch.duration_source : item.duration_source,
     reminder_offset: patch.reminder_offset !== undefined ? patch.reminder_offset : item.reminder_offset,
     reminder_dismissed_at: null,
+    reminder_snooze_until: null,
     purchased: false,
     wrapped: !!item.wrapped,
     payment_status: item.payment_status,

@@ -70,11 +70,43 @@ export function formatReminderState(item) {
   return `${label} · ${formatDate(toDayKey(due))}${item.reminder_offset === "morning" ? "" : ` ${formatTime(`${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`)}`}`;
 }
 
-/** True when reminder time has passed, item still open, and not dismissed after that due. */
+/** End-of-local-day (23:59:59.999) for "later today". */
+export function endOfLocalDay(from = new Date()) {
+  const d = new Date(from);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+/** 8:00 local tomorrow morning. */
+export function tomorrowMorning(from = new Date()) {
+  const d = new Date(from);
+  d.setDate(d.getDate() + 1);
+  d.setHours(8, 0, 0, 0);
+  return d;
+}
+
+export const SNOOZE_PRESETS = [
+  { id: "1h", label: "1h", until: (now) => new Date(now.getTime() + 60 * 60 * 1000) },
+  { id: "later", label: "Later today", until: (now) => endOfLocalDay(now) },
+  { id: "tomorrow", label: "Tomorrow", until: (now) => tomorrowMorning(now) },
+];
+
+/** Patch object for a snooze preset (keeps Clear on reminder_dismissed_at). */
+export function snoozePatch(presetId, now = new Date()) {
+  const preset = SNOOZE_PRESETS.find((p) => p.id === presetId);
+  if (!preset) return null;
+  return { reminder_snooze_until: preset.until(now).toISOString() };
+}
+
+/** True when reminder time has passed, item still open, not snoozed, and not cleared. */
 export function isReminderDue(item, now = new Date()) {
   if (!item || item.completed || !item.reminder_offset) return false;
   const due = reminderDueAt(item);
   if (!due || due > now) return false;
+  if (item.reminder_snooze_until) {
+    const until = new Date(item.reminder_snooze_until);
+    if (!Number.isNaN(until.getTime()) && until > now) return false;
+  }
   if (item.reminder_dismissed_at) {
     const dismissed = new Date(item.reminder_dismissed_at);
     if (!Number.isNaN(dismissed.getTime()) && dismissed >= due) return false;

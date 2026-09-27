@@ -3,11 +3,11 @@ import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
   RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, Upload, CalendarRange,
-  CalendarDays,
+  CalendarDays, UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
-  useItems, useDeletedItems, useFamilyMembers, invalidateAll,
+  useItems, useDeletedItems, useFamilyMembers, usePeople, invalidateAll,
   patchItemsCaches, patchFamilyMemberCaches,
 } from "@/lib/queries";
 import { entities } from "@/api/entities";
@@ -24,6 +24,7 @@ import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
 import {
   CALENDAR_VIEWS, loadDefaultCalendarView, saveDefaultCalendarView,
 } from "@/lib/calendarView";
+import { loadDevicePerson, saveDevicePerson } from "@/lib/devicePerson";
 import { buildHouseholdExport, downloadJson } from "@/lib/exportHousehold";
 import {
   importHouseholdData, summarizeImport, validateHouseholdImport,
@@ -49,6 +50,7 @@ export default function Settings() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const { data: items } = useItems({});
+  const { data: people } = usePeople();
   const { data: trashItems, isLoading: trashLoading } = useDeletedItems();
   const { data: familyMembers, isLoading: membersLoading, error: membersError } = useFamilyMembers();
   const [timezone, setTimezone] = React.useState(() => {
@@ -62,6 +64,7 @@ export default function Settings() {
   const [defaultCalendarView, setDefaultCalendarView] = React.useState(
     () => loadDefaultCalendarView() || "day"
   );
+  const [devicePerson, setDevicePerson] = React.useState(() => loadDevicePerson());
   const [includeTrashExport, setIncludeTrashExport] = React.useState(false);
   const [includeTrashImport, setIncludeTrashImport] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
@@ -104,6 +107,10 @@ export default function Settings() {
 
   function saveCalendarView(value) {
     setDefaultCalendarView(saveDefaultCalendarView(value));
+  }
+
+  function saveMePerson(value) {
+    setDevicePerson(saveDevicePerson(value));
   }
 
   async function exportHousehold() {
@@ -423,6 +430,33 @@ export default function Settings() {
           Manage people (names &amp; roles)
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </Link>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 space-y-2">
+        <div className="flex items-center gap-2 mb-1">
+          <UserCheck className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">This device is</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Person used for the My Day filter on Home and Calendar. Stored in this browser only.
+        </p>
+        <select
+          value={devicePerson}
+          onChange={(e) => saveMePerson(e.target.value)}
+          className="mt-1 h-11 w-full rounded-[6px] border border-border bg-card px-3 text-sm"
+        >
+          <option value="">Not set</option>
+          {(people || []).map((p) => (
+            <option key={p.id} value={p.name}>{p.name}</option>
+          ))}
+        </select>
+        {!people?.length && (
+          <p className="text-[11px] text-muted-foreground">
+            Add people under{" "}
+            <Link to="/people" className="text-primary hover:underline">People</Link>
+            {" "}first.
+          </p>
+        )}
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4 space-y-2">

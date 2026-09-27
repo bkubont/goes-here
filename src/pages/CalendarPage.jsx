@@ -1,7 +1,7 @@
 import React from "react";
 import { ChevronLeft, ChevronRight, Repeat, Clock, Download } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
+import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatTime, toDayKey, formatDate } from "@/lib/itemTypes";
 import { expandRecurring, exceptionSet, formatRecurrenceSummary } from "@/lib/recurring";
@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
 import { resolveCalendarView } from "@/lib/calendarView";
+import { personAccentStyle, personBarStyle, resolvePersonColor } from "@/lib/personColor";
+import { useDevicePerson } from "@/lib/devicePerson";
 
 const POOL_TYPES = new Set([
   "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
@@ -44,6 +46,9 @@ function recordId(it) {
 
 export default function CalendarPage() {
   const { data: items } = useItems({});
+  const { data: peopleData } = usePeople();
+  const people = peopleData || [];
+  const meName = useDevicePerson();
   const all = items || [];
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -64,6 +69,7 @@ export default function CalendarPage() {
   const [active, setActive] = React.useState(null);
   const [poolSelected, setPoolSelected] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
+  const [myDayOnly, setMyDayOnly] = React.useState(false);
   const [scheduleTarget, setScheduleTarget] = React.useState(null);
   const [scheduleTime, setScheduleTime] = React.useState("09:00");
   const [scheduleDate, setScheduleDate] = React.useState(() => toDayKey(new Date()));
@@ -110,7 +116,10 @@ export default function CalendarPage() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
   const selKey = toDayKey(selected);
-  const selItems = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  const selItemsRaw = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  const selItems = myDayOnly && meName
+    ? selItemsRaw.filter((it) => it.responsible_name === meName)
+    : selItemsRaw;
 
   const poolItems = React.useMemo(() => {
     return all.filter((it) => isPoolCandidate(it, selKey));
@@ -140,10 +149,14 @@ export default function CalendarPage() {
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() + i);
       const k = toDayKey(d);
-      days.push({ date: d, key: k, items: (byDay[k] || []).sort((a, b) => (a.time || "").localeCompare(b.time || "")) });
+      let dayItems = (byDay[k] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+      if (myDayOnly && meName) {
+        dayItems = dayItems.filter((it) => it.responsible_name === meName);
+      }
+      days.push({ date: d, key: k, items: dayItems });
     }
     return days;
-  }, [selected, byDay]);
+  }, [selected, byDay, myDayOnly, meName]);
 
   function setView(v) {
     const next = new URLSearchParams(searchParams);
@@ -258,6 +271,30 @@ export default function CalendarPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {(view === "day" || view === "agenda") && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!meName) {
+                  toast({
+                    title: "Pick “This device is” first",
+                    description: "Settings → This device is — choose your person name.",
+                  });
+                  return;
+                }
+                setMyDayOnly((v) => !v);
+              }}
+              className={cn(
+                "inline-flex min-h-[40px] items-center rounded-[6px] border px-2.5 text-xs font-medium transition",
+                myDayOnly && meName
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-accent"
+              )}
+              aria-pressed={myDayOnly && !!meName}
+            >
+              My Day{meName ? ` · ${meName}` : ""}
+            </button>
+          )}
           {view === "day" && (
             <Button
               type="button"
@@ -386,8 +423,13 @@ export default function CalendarPage() {
                 <div className="space-y-2">
                   {dayItems.map((it) => {
                     const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+                    const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
                     return (
-                      <div key={it.id} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+                      <div
+                        key={it.id}
+                        className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-foreground"
+                        style={accent}
+                      >
                         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setActive(it)}>
                           <div className="flex items-center gap-2">
                             {it.time && <span className="text-xs font-semibold text-primary shrink-0">{formatTime(it.time)}</span>}
@@ -422,6 +464,7 @@ export default function CalendarPage() {
             allItems={all}
             todayKey={todayKey}
             isMobile={isMobile}
+            people={people}
             onSelectDay={(d) => { setSelected(d); setView("day"); }}
             onOpenItem={setActive}
           />
@@ -475,7 +518,13 @@ export default function CalendarPage() {
                           <span className="text-muted-foreground">{formatDuration(mins)}</span>
                         </div>
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (mins / 480) * 100)}%` }} />
+                          <div
+                            className={cn("h-full rounded-full", !resolvePersonColor(name, people) && "bg-primary")}
+                            style={{
+                              width: `${Math.min(100, (mins / 480) * 100)}%`,
+                              ...personBarStyle(resolvePersonColor(name, people)),
+                            }}
+                          />
                         </div>
                       </div>
                     ))}
@@ -488,6 +537,7 @@ export default function CalendarPage() {
                   day={selected}
                   items={selItems}
                   allItems={all}
+                  people={people}
                   poolItems={poolItems}
                   selectedPoolId={poolSelected}
                   onSelectPoolItem={setPoolSelected}

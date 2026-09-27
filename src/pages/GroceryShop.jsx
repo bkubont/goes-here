@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import ShoppingListActions from "@/components/ShoppingListActions";
 
 function aisleOf(item) {
   return item.category && GROCERY_CATEGORIES.includes(item.category) ? item.category : "Other";
@@ -208,6 +209,13 @@ export default function GroceryShop() {
           >
             Done
           </Link>
+        </div>
+
+        <div className="flex flex-wrap gap-2 px-3 pb-2.5 sm:px-4">
+          <ShoppingListActions
+            items={needed}
+            title={storeFilter === "all" ? "Shopping list" : `Shopping — ${storeFilter}`}
+          />
         </div>
 
         {stores.length > 0 && (
