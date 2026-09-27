@@ -16,6 +16,21 @@ module.exports = {
   				DEFAULT: 'hsl(var(--brand))',
   				foreground: 'hsl(var(--brand-foreground))'
   			},
+  			nav: {
+  				DEFAULT: 'hsl(var(--nav))',
+  				foreground: 'hsl(var(--nav-foreground))'
+  			},
+  			canvas: 'hsl(var(--canvas))',
+  			surface: 'hsl(var(--surface))',
+  			gold: {
+  				DEFAULT: 'hsl(var(--gold))',
+  				foreground: 'hsl(var(--gold-foreground))'
+  			},
+  			attention: {
+  				DEFAULT: 'hsl(var(--attention))',
+  				foreground: 'hsl(var(--attention-foreground))'
+  			},
+  			active: 'hsl(var(--active))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
   				DEFAULT: 'hsl(var(--card))',
@@ -71,6 +86,9 @@ module.exports = {
   			body: ['var(--font-body)'],
   			display: ['var(--font-display)'],
   			mono: ['var(--font-mono)']
+  		},
+  		spacing: {
+  			'4.5': '1.125rem',
   		},
   		keyframes: {
   			'accordion-down': {
