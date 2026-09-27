@@ -14,7 +14,7 @@ import {
   upcomingBirthdays, formatBirthdayCountdown, formatBirthdayShort,
 } from "@/lib/birthdays";
 import { expandRecurring, exceptionSet } from "@/lib/recurring";
-import { dueReminders, snoozePatch } from "@/lib/reminders";
+import { dueReminders, snoozePatch, useSnoozeExpiryRefresh } from "@/lib/reminders";
 import { isAssignedToMe, useDevicePerson } from "@/lib/devicePerson";
 import ItemList from "@/components/ItemList";
 import ItemCard from "@/components/ItemCard";
@@ -107,7 +107,8 @@ export default function Home() {
   const unscheduled = active.filter((i) => i.type === "to_schedule" || (!i.date && !i.due_date && ["todo", "errand", "event", "household"].includes(i.type)));
   const needsReview = active.filter((i) => i.inbox);
   const billsDue = active.filter((i) => i.type === "bill" && i.payment_status !== "paid" && (isOverdue(i.due_date) || isToday(i.due_date) || isUpcoming(i.due_date) || !i.due_date));
-  const reminders = dueReminders(active);
+  const snoozeNow = useSnoozeExpiryRefresh(active);
+  const reminders = dueReminders(active, snoozeNow);
 
   const recent = React.useMemo(() => {
     return [...all]

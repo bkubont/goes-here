@@ -24,7 +24,7 @@ import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
 import {
   CALENDAR_VIEWS, loadDefaultCalendarView, saveDefaultCalendarView,
 } from "@/lib/calendarView";
-import { loadDevicePerson, saveDevicePerson } from "@/lib/devicePerson";
+import { loadDevicePerson, resolveDevicePersonId, saveDevicePerson } from "@/lib/devicePerson";
 import { buildHouseholdExport, downloadJson } from "@/lib/exportHousehold";
 import {
   importHouseholdData, summarizeImport, validateHouseholdImport,
@@ -64,7 +64,7 @@ export default function Settings() {
   const [defaultCalendarView, setDefaultCalendarView] = React.useState(
     () => loadDefaultCalendarView() || "day"
   );
-  const [devicePerson, setDevicePerson] = React.useState(() => loadDevicePerson());
+  const [devicePersonId, setDevicePersonId] = React.useState(() => loadDevicePerson());
   const [includeTrashExport, setIncludeTrashExport] = React.useState(false);
   const [includeTrashImport, setIncludeTrashImport] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
@@ -109,8 +109,14 @@ export default function Settings() {
     setDefaultCalendarView(saveDefaultCalendarView(value));
   }
 
+  // Migrate legacy name ? id (or clear invalid) once people load.
+  React.useEffect(() => {
+    if (people === undefined) return;
+    setDevicePersonId(resolveDevicePersonId(people));
+  }, [people]);
+
   function saveMePerson(value) {
-    setDevicePerson(saveDevicePerson(value));
+    setDevicePersonId(saveDevicePerson(value));
   }
 
   async function exportHousehold() {
@@ -441,13 +447,13 @@ export default function Settings() {
           Person used for the My Day filter on Home and Calendar. Stored in this browser only.
         </p>
         <select
-          value={devicePerson}
+          value={devicePersonId}
           onChange={(e) => saveMePerson(e.target.value)}
           className="mt-1 h-11 w-full rounded-[6px] border border-border bg-card px-3 text-sm"
         >
           <option value="">Not set</option>
           {(people || []).map((p) => (
-            <option key={p.id} value={p.name}>{p.name}</option>
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
         {!people?.length && (

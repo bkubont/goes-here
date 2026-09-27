@@ -1,7 +1,9 @@
 // Practical reminders v1: store timing on the item and surface due ones in UI.
 // No push/email delivery — computed client-side from date/time + reminder_offset.
 
+import { useEffect, useState } from "react";
 import { parseDay, toDayKey, formatDate, formatTime } from "@/lib/itemTypes";
+import { invalidateAll } from "@/lib/queries";
 
 export const REMINDER_OPTIONS = [
   { value: "", label: "No reminder" },
@@ -122,4 +124,38 @@ export function dueReminders(items, now = new Date()) {
       const db = reminderDueAt(b)?.getTime() ?? 0;
       return da - db;
     });
+}
+
+/** Soonest future `reminder_snooze_until` among items, or null. */
+export function nextSnoozeWakeAt(items, now = new Date()) {
+  let soonest = null;
+  for (const item of items || []) {
+    if (!item?.reminder_snooze_until) continue;
+    const until = new Date(item.reminder_snooze_until);
+    if (Number.isNaN(until.getTime()) || until <= now) continue;
+    if (!soonest || until < soonest) soonest = until;
+  }
+  return soonest;
+}
+
+/**
+ * When a snooze deadline is still in the future, schedule a wake that
+ * refreshes item queries so Due reminders reappear without navigation.
+ * Returns a "now" Date that advances when a snooze expires (for dueReminders).
+ */
+export function useSnoozeExpiryRefresh(items) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const wake = nextSnoozeWakeAt(items, now);
+    if (!wake) return undefined;
+    const delay = Math.max(50, wake.getTime() - Date.now() + 25);
+    const id = window.setTimeout(() => {
+      setNow(new Date());
+      invalidateAll().catch(() => {});
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [items, now]);
+
+  return now;
 }

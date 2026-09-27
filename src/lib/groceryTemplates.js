@@ -78,10 +78,15 @@ export function missingStapleItems(template, existingItems) {
       .map((i) => String(i.content || "").trim().toLowerCase())
       .filter(Boolean)
   );
-  return (template?.items || []).filter((line) => {
+  const missing = [];
+  for (const line of template?.items || []) {
     const key = String(line.content || "").trim().toLowerCase();
-    return key && !open.has(key);
-  });
+    if (!key || open.has(key)) continue;
+    // Dedupe identical template lines so two matching rows don't both create groceries.
+    open.add(key);
+    missing.push(line);
+  }
+  return missing;
 }
 
 /** Rows ready for entities.Item.bulkCreate. */

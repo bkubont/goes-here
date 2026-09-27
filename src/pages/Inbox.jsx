@@ -7,7 +7,7 @@ import ItemList from "@/components/ItemList";
 import ItemCard from "@/components/ItemCard";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import ReminderActions from "@/components/ReminderActions";
-import { dueReminders, snoozePatch } from "@/lib/reminders";
+import { dueReminders, snoozePatch, useSnoozeExpiryRefresh } from "@/lib/reminders";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function Inbox() {
@@ -18,7 +18,9 @@ export default function Inbox() {
 
   const needsReview = all.filter((i) => i.inbox && !i.completed);
   const toSchedule = all.filter((i) => i.type === "to_schedule" && !i.completed);
-  const reminders = dueReminders(all.filter((i) => !i.completed));
+  const open = all.filter((i) => !i.completed);
+  const snoozeNow = useSnoozeExpiryRefresh(open);
+  const reminders = dueReminders(open, snoozeNow);
 
   async function dismissReminder(item) {
     try {
