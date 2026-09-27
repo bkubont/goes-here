@@ -5,7 +5,7 @@ import { useItems } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { expandRecurring } from "@/lib/recurring";
-import { invalidateAll } from "@/lib/queries";
+import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
@@ -137,8 +137,9 @@ export default function CalendarPage() {
     // Booking a to_schedule turns it into an event when it gets a time.
     if (it.type === "to_schedule") patch.type = "event";
     try {
-      await entities.Item.update(id, patch);
-      invalidateAll();
+      const row = await entities.Item.update(id, patch);
+      patchItemsCaches((list) => list.map((i) => (i.id === id ? { ...i, ...row } : i)));
+      await invalidateAll();
       if (it.recurring) {
         toast({ title: "Scheduled", description: "Updates all repeats of this series." });
       }
@@ -154,11 +155,12 @@ export default function CalendarPage() {
   async function persistResize(it, minutes) {
     const id = recordId(it);
     try {
-      await entities.Item.update(id, {
+      const row = await entities.Item.update(id, {
         duration_minutes: Math.round(minutes),
         duration_source: "manual",
       });
-      invalidateAll();
+      patchItemsCaches((list) => list.map((i) => (i.id === id ? { ...i, ...row } : i)));
+      await invalidateAll();
     } catch (e) {
       toast({ title: "Could not resize", description: e.message, variant: "destructive" });
     }

@@ -32,7 +32,7 @@ export default function Projects() {
         description: desc.trim(),
         color: COLORS[list.length % COLORS.length],
       });
-      invalidateAll();
+      await invalidateAll();
       setName(""); setDesc("");
     } catch (err) {
       toast({ title: "Couldn't add project", description: err.message, variant: "destructive" });

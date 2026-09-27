@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import { ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey } from "@/lib/itemTypes";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll, usePeople, useProjects } from "@/lib/queries";
+import { invalidateAll, patchItemsCaches, usePeople, useProjects } from "@/lib/queries";
 
 export default function ItemDetailDrawer({ item, open, onOpenChange }) {
   const { toast } = useToast();
@@ -96,8 +96,9 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         if (form.completed && form.board_status !== "done") payload.board_status = "done";
         if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
       }
-      await entities.Item.update(recordId, payload);
-      invalidateAll();
+      const row = await entities.Item.update(recordId, payload);
+      patchItemsCaches((list) => list.map((i) => (i.id === recordId ? { ...i, ...row } : i)));
+      await invalidateAll();
       toast({ title: "Updated" });
       onOpenChange(false);
     } catch (e) {
@@ -112,7 +113,8 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
     setSaving(true);
     try {
       await entities.Item.delete(recordId);
-      invalidateAll();
+      patchItemsCaches((list) => list.filter((i) => i.id !== recordId));
+      await invalidateAll();
       onOpenChange(false);
     } catch (e) {
       toast({ title: "Delete failed", description: e.message, variant: "destructive" });

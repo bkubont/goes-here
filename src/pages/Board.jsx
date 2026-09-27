@@ -2,7 +2,7 @@ import React from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useSearchParams } from "react-router-dom";
 import { Clock, User, FolderKanban } from "lucide-react";
-import { useItems, usePeople, useProjects, invalidateAll } from "@/lib/queries";
+import { useItems, usePeople, useProjects, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { ITEM_TYPES, ITEM_TYPE_MAP } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
@@ -93,8 +93,9 @@ export default function Board() {
       if (newStatus === "done" && item.duration_minutes != null && item.actual_duration_minutes == null) {
         patch.actual_duration_minutes = Number(item.duration_minutes);
       }
-      await entities.Item.update(item.id, patch);
-      invalidateAll();
+      const row = await entities.Item.update(item.id, patch);
+      patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
+      await invalidateAll();
     } catch (e) {
       toast({ title: "Move failed", description: e.message, variant: "destructive" });
     }
