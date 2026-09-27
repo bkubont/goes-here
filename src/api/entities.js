@@ -1,4 +1,5 @@
 import { supabase } from '@/api/supabaseClient';
+import { DB_PAGE_SIZE } from '@/lib/paging';
 
 // Thin table helpers so pages can say entities.Item.update(id, patch).
 // Every call returns data or throws an Error with a readable message.
@@ -7,6 +8,29 @@ async function run(query) {
   const { data, error } = await query;
   if (error) throw Object.assign(new Error(error.message), error);
   return data;
+}
+
+// Tables whose primary key is id. family_members is keyed by email.
+const ID_TIEBREAK = new Set([
+  'items', 'people', 'projects', 'attachments',
+  'boards', 'board_columns', 'board_swimlanes',
+]);
+
+// Never ask PostgREST for more than the default Max rows cap in one call.
+function clampPageSize(limit) {
+  const n = Math.floor(Number(limit));
+  if (!Number.isFinite(n) || n <= 0) return DB_PAGE_SIZE;
+  return Math.min(DB_PAGE_SIZE, n);
+}
+
+function orderBy(q, table, sort) {
+  if (sort) {
+    const desc = sort.startsWith('-');
+    q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
+  }
+  // Stable tie-break so page 2 cannot reshuffle rows that tied on the sort column.
+  if (ID_TIEBREAK.has(table)) q = q.order('id', { ascending: true });
+  return q;
 }
 
 // sort is a column name, prefixed with "-" for descending (e.g. "-created_date").
@@ -18,13 +42,11 @@ function select(table, match, sort, limit, { includeDeleted = false, offset = 0 
   if (table === 'items' && !includeDeleted) {
     q = q.is('deleted_at', null);
   }
-  if (sort) {
-    const desc = sort.startsWith('-');
-    q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
-  }
+  q = orderBy(q, table, sort);
   if (limit) {
+    const size = clampPageSize(limit);
     const from = Math.max(0, Number(offset) || 0);
-    q = q.range(from, from + limit - 1);
+    q = q.range(from, from + size - 1);
   }
   return run(q);
 }
@@ -58,14 +80,15 @@ const itemTable = table('items');
 export const entities = {
   Item: {
     ...itemTable,
-    /** Soft-deleted rows only (trash). */
-    listDeleted: (sort = '-deleted_at', limit = 200) => {
+    /** Soft-deleted rows only (trash). Pass offset to walk pages of at most DB_PAGE_SIZE. */
+    listDeleted: (sort = '-deleted_at', limit = DB_PAGE_SIZE, { offset = 0 } = {}) => {
       let q = supabase.from('items').select('*').not('deleted_at', 'is', null);
-      if (sort) {
-        const desc = sort.startsWith('-');
-        q = q.order(desc ? sort.slice(1) : sort, { ascending: !desc });
+      q = orderBy(q, 'items', sort);
+      if (limit) {
+        const size = clampPageSize(limit);
+        const from = Math.max(0, Number(offset) || 0);
+        q = q.range(from, from + size - 1);
       }
-      if (limit) q = q.limit(limit);
       return run(q);
     },
     restore: (id) =>
