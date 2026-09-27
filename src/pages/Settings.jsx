@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
   RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, Upload, CalendarRange,
-  CalendarDays, UserCheck,
+  CalendarDays, UserCheck, LayoutList, Eye, EyeOff, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -18,6 +18,9 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDate } from "@/lib/itemTypes";
 import { cn } from "@/lib/utils";
+import {
+  loadListPrefs, moveListType, orderedPlanningTypes, resetListPrefs, setListTypeHidden,
+} from "@/lib/listPrefs";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { supabase } from "@/api/supabaseClient";
 import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
@@ -65,6 +68,7 @@ export default function Settings() {
     () => loadDefaultCalendarView() || "day"
   );
   const [devicePersonId, setDevicePersonId] = React.useState(() => loadDevicePerson());
+  const [listPrefs, setListPrefs] = React.useState(() => loadListPrefs());
   const [includeTrashExport, setIncludeTrashExport] = React.useState(false);
   const [includeTrashImport, setIncludeTrashImport] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
@@ -128,8 +132,8 @@ export default function Settings() {
       toast({
         title: "Export downloaded",
         description: includeTrashExport
-          ? "Includes active data and trash."
-          : "Active items, people, and projects (trash excluded).",
+          ? "Includes active data, boards, and trash."
+          : "Active items, people, projects, and boards (trash excluded).",
       });
     } catch (e) {
       toast({ title: "Export failed", description: e.message, variant: "destructive" });
@@ -150,6 +154,7 @@ export default function Settings() {
         const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 0;
         const peopleCount = Array.isArray(parsed.people) ? parsed.people.length : 0;
         const projectCount = Array.isArray(parsed.projects) ? parsed.projects.length : 0;
+        const boardCount = Array.isArray(parsed.boards) ? parsed.boards.length : 0;
         const trashCount = Array.isArray(parsed.trash) ? parsed.trash.length : 0;
         setImportConfirm({
           data: parsed,
@@ -157,6 +162,7 @@ export default function Settings() {
           itemCount,
           peopleCount,
           projectCount,
+          boardCount,
           trashCount,
         });
       } catch (err) {
@@ -465,6 +471,71 @@ export default function Settings() {
         )}
       </section>
 
+      <section id="lists" className="rounded-xl border border-border bg-card p-4 space-y-3 scroll-mt-4">
+        <div className="flex items-center gap-2 mb-1">
+          <LayoutList className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium">Lists</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Show, hide, and reorder built-in list types on this device. Shopping (groceries) stays separate.
+        </p>
+        <div className="space-y-1.5">
+          {orderedPlanningTypes(listPrefs).map((t, idx) => {
+            const Icon = t.icon;
+            const hidden = listPrefs.hidden.includes(t.key);
+            return (
+              <div
+                key={t.key}
+                className={cn(
+                  "flex min-h-[48px] items-center gap-2 rounded-[6px] border border-border px-2 py-1.5",
+                  hidden && "opacity-60"
+                )}
+              >
+                <span className={cn("grid h-8 w-8 place-items-center rounded-[4px] border shrink-0", t.tone)}>
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="flex-1 min-w-0 text-sm font-medium truncate">{t.plural || t.label}</span>
+                <button
+                  type="button"
+                  className="grid h-9 w-9 place-items-center rounded-[6px] hover:bg-accent disabled:opacity-30"
+                  disabled={idx === 0}
+                  onClick={() => setListPrefs(moveListType(t.key, "up"))}
+                  aria-label={`Move ${t.label} up`}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="grid h-9 w-9 place-items-center rounded-[6px] hover:bg-accent disabled:opacity-30"
+                  disabled={idx === orderedPlanningTypes(listPrefs).length - 1}
+                  onClick={() => setListPrefs(moveListType(t.key, "down"))}
+                  aria-label={`Move ${t.label} down`}
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="grid h-9 w-9 place-items-center rounded-[6px] hover:bg-accent"
+                  onClick={() => setListPrefs(setListTypeHidden(t.key, !hidden))}
+                  aria-label={hidden ? `Show ${t.label}` : `Hide ${t.label}`}
+                >
+                  {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-[40px]"
+          onClick={() => setListPrefs(resetListPrefs())}
+        >
+          Reset list order &amp; visibility
+        </Button>
+      </section>
+
       <section className="rounded-xl border border-border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2 mb-1">
           <Clock className="h-4 w-4 text-primary" />
@@ -551,7 +622,7 @@ export default function Settings() {
           <p className="text-sm font-medium">Backup</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Export or import a JSON backup of items, people, and projects. Family members only.
+          Export or import a JSON backup of items, people, projects, and boards. Family members only.
           Import merges and creates — it does not wipe your household.
         </p>
         <label className="flex items-center gap-2 text-sm min-h-[40px]">
@@ -814,7 +885,7 @@ export default function Settings() {
                 </p>
                 <p>
                   {importConfirm?.peopleCount ?? 0} people · {importConfirm?.projectCount ?? 0} projects ·{" "}
-                  {importConfirm?.itemCount ?? 0} items
+                  {importConfirm?.boardCount ?? 0} boards · {importConfirm?.itemCount ?? 0} items
                   {(importConfirm?.trashCount ?? 0) > 0
                     ? ` · ${importConfirm.trashCount} trash`
                     : ""}

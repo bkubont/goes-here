@@ -2,6 +2,7 @@ import React from "react";
 import { CheckCheck, X } from "lucide-react";
 import { entities } from "@/api/entities";
 import { completionPatch } from "@/lib/estimateDuration";
+import { completionBoardPatch, sortByPosition } from "@/lib/boards";
 import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
@@ -35,24 +36,40 @@ export default function BulkCompleteBar({
       return;
     }
     setBusy(true);
-    const snapshots = targets.map((it) => ({
-      id: it.id,
-      previous: {
-        completed: !!it.completed,
-        completed_date: it.completed_date ?? null,
-        board_status: it.board_status || "backlog",
-        actual_duration_minutes: it.actual_duration_minutes ?? null,
-        purchased: it.purchased,
-        payment_status: it.payment_status,
-      },
-      patch: {
-        ...completionPatch(it, true),
-        ...(it.type === "grocery" || it.type === "shopping" ? { purchased: true } : {}),
-        ...(it.type === "bill" ? { payment_status: "paid" } : {}),
-      },
-    }));
+    const columnsByBoard = new Map();
+    async function colsFor(boardId) {
+      if (!boardId) return [];
+      if (!columnsByBoard.has(boardId)) {
+        const rows = await entities.BoardColumn.filter({ board_id: boardId }, "position", 100);
+        columnsByBoard.set(boardId, sortByPosition(rows));
+      }
+      return columnsByBoard.get(boardId);
+    }
 
     try {
+      const snapshots = [];
+      for (const it of targets) {
+        const cols = await colsFor(it.board_id);
+        const patch = cols.length
+          ? completionBoardPatch(it, true, cols)
+          : completionPatch(it, true);
+        if (it.type === "grocery" || it.type === "shopping") patch.purchased = true;
+        if (it.type === "bill") patch.payment_status = "paid";
+        snapshots.push({
+          id: it.id,
+          previous: {
+            completed: !!it.completed,
+            completed_date: it.completed_date ?? null,
+            board_status: it.board_status || "backlog",
+            board_column_id: it.board_column_id ?? null,
+            actual_duration_minutes: it.actual_duration_minutes ?? null,
+            purchased: it.purchased,
+            payment_status: it.payment_status,
+          },
+          patch,
+        });
+      }
+
       const results = await Promise.all(
         snapshots.map(({ id, patch }) => entities.Item.update(id, patch))
       );

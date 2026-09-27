@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 const DEBOUNCE_MS = 400;
 
 /**
- * Subscribe to Supabase Realtime on items/people/projects so other family
+ * Subscribe to Supabase Realtime on household tables so other family
  * devices see creates/updates/deletes without a full page reload.
  * Debounced invalidateAll matches local mutation refresh (PR #4 patterns).
  */
@@ -27,24 +27,24 @@ export function useRealtimeSync() {
       }, DEBOUNCE_MS);
     };
 
-    const channel = supabase
-      .channel("family-sync")
-      .on(
+    const tables = [
+      "items",
+      "people",
+      "projects",
+      "boards",
+      "board_columns",
+      "board_swimlanes",
+    ];
+
+    let channel = supabase.channel("family-sync");
+    for (const table of tables) {
+      channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "items" },
+        { event: "*", schema: "public", table },
         scheduleRefresh
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "people" },
-        scheduleRefresh
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "projects" },
-        scheduleRefresh
-      )
-      .subscribe();
+      );
+    }
+    channel.subscribe();
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);

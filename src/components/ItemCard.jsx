@@ -3,7 +3,8 @@ import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatDate, formatTime, isOverdue, STATUS_LABELS } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll, patchItemsCaches } from "@/lib/queries";
+import { completionBoardPatch, sortByPosition } from "@/lib/boards";
+import { invalidateAll, patchItemsCaches, useBoardColumns } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import {
   Check, CalendarDays, UserCheck, FolderKanban, AlertCircle, Repeat, Clock, Bell, Paperclip,
@@ -35,6 +36,8 @@ export default function ItemCard({
   const overdue = !item.completed && (isOverdue(item.date) || isOverdue(item.due_date));
   const durationLabel = formatDuration(item.duration_minutes);
   const attachmentCount = Number(item.attachment_count) || 0;
+  const { data: boardColumnsRaw } = useBoardColumns(item.board_id || null);
+  const boardColumns = React.useMemo(() => sortByPosition(boardColumnsRaw), [boardColumnsRaw]);
   const timeLine = item.date
     ? `${formatDate(item.date)}${item.time ? ` · ${formatTime(item.time)}` : ""}`
     : item.due_date
@@ -45,11 +48,21 @@ export default function ItemCard({
     e.stopPropagation();
     if (item._recurringOccurrence) return;
     const nextCompleted = !item.completed;
-    const patch = completionPatch(item, nextCompleted);
+    const patch = boardColumns.length
+      ? completionBoardPatch(item, nextCompleted, boardColumns)
+      : completionPatch(item, nextCompleted);
+    if (nextCompleted) {
+      if (item.type === "grocery" || item.type === "shopping") patch.purchased = true;
+      if (item.type === "bill") patch.payment_status = "paid";
+    } else {
+      if (item.type === "grocery" || item.type === "shopping") patch.purchased = false;
+      if (item.type === "bill" && item.payment_status === "paid") patch.payment_status = "unpaid";
+    }
     const previous = {
       completed: !!item.completed,
       completed_date: item.completed_date ?? null,
       board_status: item.board_status || (item.completed ? "done" : "backlog"),
+      board_column_id: item.board_column_id ?? null,
       actual_duration_minutes: item.actual_duration_minutes ?? null,
       purchased: item.purchased,
       payment_status: item.payment_status,

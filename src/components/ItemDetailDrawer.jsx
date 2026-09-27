@@ -21,7 +21,10 @@ import {
   ITEM_TYPES, GROCERY_CATEGORIES, parseDay, toDayKey,
 } from "@/lib/itemTypes";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll, usePeople, useProjects, patchItemsCaches } from "@/lib/queries";
+import { boardColumnPatch, columnForItem, completionBoardPatch, sortByPosition } from "@/lib/boards";
+import {
+  invalidateAll, usePeople, useProjects, useBoardColumns, patchItemsCaches,
+} from "@/lib/queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { useDevicePerson } from "@/lib/devicePerson";
@@ -69,11 +72,15 @@ function resolveRecurringWrite(form) {
   return raw;
 }
 
-export default function ItemDetailDrawer({ item, open, onOpenChange }) {
+export default function ItemDetailDrawer({ item, open, onOpenChange, activeBoardId = null }) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const { data: people } = usePeople();
   const { data: projects } = useProjects();
+  // Prefer the item's board, then the board being viewed. Never default orphans to the first board.
+  const boardId = item?.board_id || activeBoardId || null;
+  const { data: boardColumnsRaw } = useBoardColumns(open ? boardId : null);
+  const boardColumns = React.useMemo(() => sortByPosition(boardColumnsRaw), [boardColumnsRaw]);
   const meName = useDevicePerson();
   const meNameRef = React.useRef(meName);
   meNameRef.current = meName;
@@ -190,6 +197,8 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       const durationChanged =
         durationRaw !== (item.duration_minutes == null ? null : Number(item.duration_minutes));
       const completedChanged = !!form.completed !== !!item.completed;
+      const statusChanged =
+        (form.board_status || "backlog") !== (item.board_status || (item.completed ? "done" : "backlog"));
       const payload = {
         content: form.content,
         type: form.type,
@@ -213,7 +222,34 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
         payment_status: form.payment_status,
         board_status: form.board_status || "backlog",
         reminder_offset: form.reminder_offset || null,
+        completed: !!form.completed,
       };
+      // Only assign a board when the item already has one or the viewer passed activeBoardId
+      // (e.g. opening an orphan from a project board). Never fall back to the first board.
+      if (boardId) payload.board_id = boardId;
+
+      if (completedChanged && boardColumns.length) {
+        // Move to done / open column — do not leave open board_column_id with status=done.
+        Object.assign(payload, completionBoardPatch({ ...item, ...form }, !!form.completed, boardColumns));
+        if (boardId) payload.board_id = boardId;
+      } else if (completedChanged) {
+        Object.assign(payload, completionPatch({ ...item, ...form }, !!form.completed));
+      } else if ((statusChanged || isDraft) && boardColumns.length) {
+        const col =
+          boardColumns.find((c) => c.status_key === (form.board_status || "backlog")) ||
+          columnForItem({ ...item, ...form }, boardColumns);
+        if (col) {
+          Object.assign(payload, boardColumnPatch(col, { boardId: boardId || undefined, item }));
+        }
+      } else {
+        // Ordinary edit: keep placement fields, do not refresh completed_date.
+        if (item.board_column_id) payload.board_column_id = item.board_column_id;
+        payload.board_status = form.board_status || item.board_status || "backlog";
+        if (form.completed && item.completed_date) {
+          payload.completed_date = item.completed_date;
+        }
+      }
+
       if (durationRaw != null && !Number.isNaN(durationRaw) && durationRaw > 0) {
         payload.duration_minutes = Math.round(durationRaw);
         if (durationChanged) payload.duration_source = "manual";
@@ -221,13 +257,6 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
       } else if (durationRaw === null) {
         payload.duration_minutes = null;
         payload.duration_source = null;
-      }
-      if (completedChanged) {
-        Object.assign(payload, completionPatch({ ...item, ...form }, !!form.completed));
-      } else {
-        payload.completed = !!form.completed;
-        if (form.completed && form.board_status !== "done") payload.board_status = "done";
-        if (!form.completed && form.board_status === "done") payload.board_status = "backlog";
       }
 
       if (isDraft) {
@@ -256,6 +285,8 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
           completed: !!item.completed,
           completed_date: item.completed_date ?? null,
           board_status: item.board_status || "backlog",
+          board_column_id: item.board_column_id ?? null,
+          board_id: item.board_id ?? null,
           actual_duration_minutes: item.actual_duration_minutes ?? null,
           purchased: item.purchased,
           payment_status: item.payment_status,
@@ -479,13 +510,31 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
 
       <div className="space-y-1.5">
         <Label>Status</Label>
-        <Select value={form.board_status || "backlog"} onValueChange={(v) => set({ board_status: v, completed: v === "done" })}>
+        <Select
+          value={form.board_status || (boardColumns[0]?.status_key) || "backlog"}
+          onValueChange={(v) => {
+            const col = boardColumns.find((c) => c.status_key === v);
+            set({
+              board_status: v,
+              completed: col ? !!col.is_done : v === "done",
+              board_column_id: col?.id,
+            });
+          }}
+        >
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="backlog">Backlog</SelectItem>
-            <SelectItem value="ready">Ready</SelectItem>
-            <SelectItem value="doing">Doing</SelectItem>
-            <SelectItem value="done">Done</SelectItem>
+            {boardColumns.length > 0 ? (
+              boardColumns.map((c) => (
+                <SelectItem key={c.id} value={c.status_key}>{c.name}</SelectItem>
+              ))
+            ) : (
+              <>
+                <SelectItem value="backlog">Backlog</SelectItem>
+                <SelectItem value="ready">Ready</SelectItem>
+                <SelectItem value="doing">Doing</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+              </>
+            )}
           </SelectContent>
         </Select>
       </div>
@@ -495,9 +544,36 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
           <Switch
             checked={isBill ? form.payment_status === "paid" : (isGrocery || form.type === "shopping" ? !!form.purchased || !!form.completed : !!form.completed)}
             onCheckedChange={(v) => {
-              if (isBill) set({ payment_status: v ? "paid" : "unpaid", completed: v });
-              else if (isGrocery || form.type === "shopping") set({ purchased: v, completed: v });
-              else set({ completed: v });
+              const next = {};
+              if (isBill) {
+                next.payment_status = v ? "paid" : "unpaid";
+                next.completed = v;
+              } else if (isGrocery || form.type === "shopping") {
+                next.purchased = v;
+                next.completed = v;
+              } else {
+                next.completed = v;
+              }
+              // Keep status select in sync when toggling completed without picking a column.
+              if (boardColumns.length) {
+                if (v) {
+                  const doneCol = boardColumns.find((c) => c.is_done);
+                  if (doneCol) {
+                    next.board_status = doneCol.status_key;
+                    next.board_column_id = doneCol.id;
+                  }
+                } else {
+                  const openCol =
+                    boardColumns.find((c) => !c.is_done && c.status_key === item.board_status) ||
+                    boardColumns.find((c) => !c.is_done) ||
+                    boardColumns[0];
+                  if (openCol) {
+                    next.board_status = openCol.status_key;
+                    next.board_column_id = openCol.id;
+                  }
+                }
+              }
+              set(next);
             }}
           />
           {doneLabel}

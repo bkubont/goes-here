@@ -131,7 +131,10 @@ export function applyDurationEstimate(item, allItems = [], aiMinutes = null) {
   return estimateDuration(item, allItems, aiMinutes);
 }
 
-/** Sync completed ↔ board_status and optionally capture actual duration. */
+/**
+ * Sync completed ↔ board_status and optionally capture actual duration.
+ * Prefer completionBoardPatch from @/lib/boards when columns are known.
+ */
 export function completionPatch(item, completed) {
   if (completed) {
     return {
@@ -153,11 +156,15 @@ export function completionPatch(item, completed) {
   };
 }
 
-/** When board column changes. */
-export function boardStatusPatch(status) {
-  if (status === "done") {
+/**
+ * When board column changes (legacy status_key API).
+ * Prefer boardColumnPatch from @/lib/boards when you have a column row.
+ */
+export function boardStatusPatch(status, { isDone } = {}) {
+  const done = isDone != null ? !!isDone : status === "done";
+  if (done) {
     return {
-      board_status: "done",
+      board_status: status || "done",
       completed: true,
       completed_date: new Date().toISOString(),
     };
