@@ -6,8 +6,8 @@ import { entities } from "@/api/entities";
 import ItemList from "@/components/ItemList";
 import ItemCard from "@/components/ItemCard";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
-import { dueReminders } from "@/lib/reminders";
-import { Button } from "@/components/ui/button";
+import ReminderActions from "@/components/ReminderActions";
+import { dueReminders, snoozePatch, useSnoozeExpiryRefresh } from "@/lib/reminders";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function Inbox() {
@@ -18,7 +18,9 @@ export default function Inbox() {
 
   const needsReview = all.filter((i) => i.inbox && !i.completed);
   const toSchedule = all.filter((i) => i.type === "to_schedule" && !i.completed);
-  const reminders = dueReminders(all.filter((i) => !i.completed));
+  const open = all.filter((i) => !i.completed);
+  const snoozeNow = useSnoozeExpiryRefresh(open);
+  const reminders = dueReminders(open, snoozeNow);
 
   async function dismissReminder(item) {
     try {
@@ -27,6 +29,19 @@ export default function Inbox() {
       await invalidateAll();
     } catch (e) {
       toast({ title: "Could not dismiss", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function snoozeReminder(item, presetId) {
+    const patch = snoozePatch(presetId);
+    if (!patch) return;
+    try {
+      const row = await entities.Item.update(item.id, patch);
+      patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
+      await invalidateAll();
+      toast({ title: "Snoozed", description: "Reminder will come back after the snooze ends." });
+    } catch (e) {
+      toast({ title: "Could not snooze", description: e.message, variant: "destructive" });
     }
   }
 
@@ -71,14 +86,11 @@ export default function Inbox() {
                 <div className="min-w-0 flex-1">
                   <ItemCard item={it} onOpen={setActiveReminder} />
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="min-h-[44px] shrink-0 text-xs"
-                  onClick={() => dismissReminder(it)}
-                >
-                  Clear
-                </Button>
+                <ReminderActions
+                  compact
+                  onDismiss={() => dismissReminder(it)}
+                  onSnooze={(presetId) => snoozeReminder(it, presetId)}
+                />
               </div>
             ))}
             <ItemDetailDrawer

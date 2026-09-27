@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { formatDuration, DEFAULT_BLOCK_MINUTES } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
+import { personAccentStyle, resolvePersonColor } from "@/lib/personColor";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export const DAY_START_HOUR = 6;
@@ -57,6 +58,7 @@ export default function DayGrid({
   poolItems = [],
   selectedPoolId,
   onSelectPoolItem,
+  people = [],
 }) {
   const isMobile = useIsMobile();
   const gridRef = React.useRef(null);
@@ -224,15 +226,16 @@ export default function DayGrid({
           {scheduled.map((it) => {
             const { top, height, duration } = blockStyle(it);
             const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+            const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
             return (
               <div
                 key={it.id}
                 className={cn(
-                  "absolute left-1 right-2 z-10 overflow-hidden rounded-lg border px-2 py-1 text-left shadow-sm cursor-grab active:cursor-grabbing",
-                  TI.tone,
+                  "absolute left-1 right-2 z-10 overflow-hidden rounded-lg border px-2 py-1 text-left shadow-sm cursor-grab active:cursor-grabbing text-foreground",
+                  !accent.borderLeftColor && TI.tone,
                   it.completed && "opacity-50"
                 )}
-                style={{ top, height }}
+                style={{ top, height, ...accent }}
                 onPointerDown={(e) => startMove(e, it)}
                 onClick={(e) => {
                   e.stopPropagation();

@@ -9,6 +9,8 @@ import ItemList from "@/components/ItemList";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import CollapsibleListSection from "@/components/CollapsibleListSection";
 import BulkCompleteBar, { useListSelection } from "@/components/BulkCompleteBar";
+import ShoppingListActions from "@/components/ShoppingListActions";
+import StaplesPanel from "@/components/StaplesPanel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
@@ -428,7 +430,12 @@ export default function Lists() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          {type === "grocery" && <ShopModeLink />}
+          {type === "grocery" && (
+            <>
+              <ShoppingListActions items={active} title="Grocery list" />
+              <ShopModeLink />
+            </>
+          )}
           {type === "gift" && (
             <Button type="button" size="sm" className="min-h-[40px]" onClick={openGiftDraft}>
               <Plus className="h-4 w-4 mr-1" /> Add gift
@@ -477,6 +484,19 @@ export default function Lists() {
         onSelectModeChange={selection.setSelectMode}
         onSelectedIdsChange={selection.setSelectedIds}
       />
+
+      {type === "grocery" && (
+        <div className="mb-4">
+          <StaplesPanel
+            groceryItems={all.filter((i) => i.type === "grocery")}
+            selectedItems={
+              selection.selectMode && selection.selectedIds?.size
+                ? active.filter((i) => selection.selectedIds.has(i.id))
+                : undefined
+            }
+          />
+        </div>
+      )}
 
       {type === "grocery" ? (
         <GroceryView items={active} listProps={selection.listProps} />

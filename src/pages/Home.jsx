@@ -14,10 +14,12 @@ import {
   upcomingBirthdays, formatBirthdayCountdown, formatBirthdayShort,
 } from "@/lib/birthdays";
 import { expandRecurring, exceptionSet } from "@/lib/recurring";
-import { dueReminders } from "@/lib/reminders";
+import { dueReminders, snoozePatch, useSnoozeExpiryRefresh } from "@/lib/reminders";
+import { isAssignedToMe, useDevicePerson } from "@/lib/devicePerson";
 import ItemList from "@/components/ItemList";
 import ItemCard from "@/components/ItemCard";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
+import ReminderActions from "@/components/ReminderActions";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
@@ -34,7 +36,7 @@ function visibleOnDay(it, dayKey) {
   return !exceptionSet(it).has(dayKey);
 }
 
-function DueRemindersBlock({ items, onDismiss }) {
+function DueRemindersBlock({ items, onDismiss, onSnooze }) {
   const [active, setActive] = React.useState(null);
   if (!items.length) return null;
   return (
@@ -51,14 +53,11 @@ function DueRemindersBlock({ items, onDismiss }) {
             <div className="min-w-0 flex-1">
               <ItemCard item={it} onOpen={setActive} />
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="min-h-[44px] shrink-0 text-xs"
-              onClick={() => onDismiss(it)}
-            >
-              Clear
-            </Button>
+            <ReminderActions
+              compact
+              onDismiss={() => onDismiss(it)}
+              onSnooze={(presetId) => onSnooze(it, presetId)}
+            />
           </div>
         ))}
       </div>
@@ -73,6 +72,8 @@ export default function Home() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [giftDraft, setGiftDraft] = React.useState(null);
+  const meName = useDevicePerson();
+  const [myDayOnly, setMyDayOnly] = React.useState(false);
   const all = items || [];
   const birthdaysSoon = upcomingBirthdays(people || [], 30);
 
@@ -83,9 +84,13 @@ export default function Home() {
   const active = all.filter((i) => !i.completed);
   const withRepeats = [...active, ...expandRecurring(active, weekStart, weekEnd)];
 
-  const today = withRepeats
+  const todayAll = withRepeats
     .filter((i) => (isToday(i.date) || isToday(i.due_date)) && visibleOnDay(i, toDayKey(i.date || i.due_date)))
     .sort((a, b) => timeSortKey(a).localeCompare(timeSortKey(b)));
+
+  const today = myDayOnly && meName
+    ? todayAll.filter((i) => isAssignedToMe(i, meName))
+    : todayAll;
 
   const upcoming = withRepeats
     .filter((i) => {
@@ -102,7 +107,8 @@ export default function Home() {
   const unscheduled = active.filter((i) => i.type === "to_schedule" || (!i.date && !i.due_date && ["todo", "errand", "event", "household"].includes(i.type)));
   const needsReview = active.filter((i) => i.inbox);
   const billsDue = active.filter((i) => i.type === "bill" && i.payment_status !== "paid" && (isOverdue(i.due_date) || isToday(i.due_date) || isUpcoming(i.due_date) || !i.due_date));
-  const reminders = dueReminders(active);
+  const snoozeNow = useSnoozeExpiryRefresh(active);
+  const reminders = dueReminders(active, snoozeNow);
 
   const recent = React.useMemo(() => {
     return [...all]
@@ -182,6 +188,19 @@ export default function Home() {
     }
   }
 
+  async function snoozeReminder(item, presetId) {
+    const patch = snoozePatch(presetId);
+    if (!patch) return;
+    try {
+      const row = await entities.Item.update(item.id, patch);
+      patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
+      await invalidateAll();
+      toast({ title: "Snoozed", description: "Reminder will come back after the snooze ends." });
+    } catch (e) {
+      toast({ title: "Could not snooze", description: e.message, variant: "destructive" });
+    }
+  }
+
   function openGiftDraft(personName) {
     setGiftDraft({
       _draft: true,
@@ -202,7 +221,36 @@ export default function Home() {
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8 space-y-8">
       <header>
         <p className="text-sm text-muted-foreground">{dateLabel}</p>
-        <h1 className="page-title mt-1">Today</h1>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="page-title">Today</h1>
+          <button
+            type="button"
+            onClick={() => {
+              if (!meName) {
+                toast({
+                  title: "Pick “This device is” first",
+                  description: "Settings → This device is — choose your person name.",
+                });
+                return;
+              }
+              setMyDayOnly((v) => !v);
+            }}
+            className={cn(
+              "inline-flex min-h-[36px] items-center rounded-[6px] border px-2.5 text-xs font-medium transition",
+              myDayOnly && meName
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-accent"
+            )}
+            aria-pressed={myDayOnly && !!meName}
+          >
+            My Day{meName ? ` · ${meName}` : ""}
+          </button>
+        </div>
+        {myDayOnly && meName && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Showing today&apos;s items assigned to {meName}.
+          </p>
+        )}
       </header>
 
       {attention.length > 0 && (
@@ -299,7 +347,11 @@ export default function Home() {
       )}
 
       {reminders.length > 0 && (
-        <DueRemindersBlock items={reminders.slice(0, 5)} onDismiss={dismissReminder} />
+        <DueRemindersBlock
+          items={reminders.slice(0, 5)}
+          onDismiss={dismissReminder}
+          onSnooze={snoozeReminder}
+        />
       )}
 
       {recent.length > 0 && (
