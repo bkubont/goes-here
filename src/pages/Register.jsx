@@ -52,7 +52,14 @@ export default function Register() {
     setError("");
     setLoading(true);
     try {
-      const { error: verifyError } = await supabase.auth.verifyOtp({ email, token: otpCode, type: "email" });
+      // signUp() and resend({ type: "signup" }) send the Confirm signup email.
+      // That 6-digit {{ .Token }} is a signup confirmation token, so verify it
+      // as "signup". Type "email" is the passwordless sign-in code.
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: otpCode,
+        type: "signup",
+      });
       if (verifyError) throw verifyError;
       window.location.href = safeReturnTo();
     } catch (err) {

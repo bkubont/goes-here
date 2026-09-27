@@ -92,9 +92,12 @@ function advance(rec, d) {
     case "monthlyDom":
     case "monthlyN": {
       const step = rec.kind === "monthlyN" ? rec.n : 1;
-      n.setMonth(n.getMonth() + step);
-      const dom = Math.min(rec.dom, daysInMonth(n.getFullYear(), n.getMonth()));
-      n.setDate(dom);
+      // Build the target month from day 1. setMonth() on the 31st overflows
+      // (Jan 31 + 1 month becomes March) and skips a short month.
+      const shifted = new Date(n.getFullYear(), n.getMonth() + step, 1);
+      const dim = daysInMonth(shifted.getFullYear(), shifted.getMonth());
+      const dom = Math.min(rec.dom || 1, dim);
+      n.setFullYear(shifted.getFullYear(), shifted.getMonth(), dom);
       break;
     }
     case "yearly": {
@@ -226,8 +229,10 @@ export function expandRecurring(items, start, end) {
   const out = [];
   (items || []).forEach((it) => {
     if (!isRecurring(it)) return;
-    const anchor = new Date(it.date);
-    if (Number.isNaN(anchor.getTime())) return;
+    // date may be a date-only string. new Date("YYYY-MM-DD") is UTC midnight
+    // and lands on the previous local day in the Americas.
+    const anchor = parseDay(it.date);
+    if (!anchor) return;
     const rec = parseRecurrence(it.recurring, anchor);
     if (!rec) return;
     const exceptions = exceptionSet(it);
