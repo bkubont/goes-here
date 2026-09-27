@@ -75,16 +75,29 @@ Other scripts: `npm run build` (production build into `dist/`), `npm run lint`, 
 
 ## Hosting on Hostinger
 
-The app is a static site, so any Hostinger web hosting plan can serve it. Supabase and the Quick Add function keep running on Supabase.
+The app is a static Vite SPA. Hostinger only serves the frontend; Supabase (Postgres, Auth, Edge Functions / Quick Add) stays on Supabase.
 
-1. **Build on your computer:** run `npm run build`. The Supabase values from `.env.local` are built into the files in `dist/`, so Hostinger needs no settings. (The publishable key is meant to be public.)
-2. **Upload:** in hPanel open **File Manager** (or connect over FTP) and upload the *contents* of `dist/` into `public_html`, or into the folder of a subdomain such as `place.yourdomain.com`. Include `.htaccess`: it makes links like `/calendar` work when a page is refreshed. File Manager may hide files that start with a dot, so check it arrived.
-3. **Turn on SSL** for the domain in hPanel (it's free) so the app loads over `https://`.
-4. **Tell Supabase the address:** in **Authentication → URL Configuration**, set **Site URL** to `https://yourdomain.com` and add `https://yourdomain.com/**` under **Redirect URLs**. Otherwise sign-up and password-reset emails link back to localhost.
+**Skip Hostinger’s `db.js` / CommonJS Supabase client step.** This app already has a single browser client at `src/api/supabaseClient.js` (`@supabase/supabase-js` is in `package.json`). Do not add a second client.
 
-To publish an update, run `npm run build` again and upload the new `dist/` contents over the old ones.
+### Environment variables (build time)
 
-The `.htaccess` file is for Apache/LiteSpeed servers like Hostinger's. On another static host (Netlify, Vercel, Cloudflare Pages and similar), turn on its single-page-app fallback instead and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in its environment settings.
+Hostinger’s Supabase connector may inject `SUPABASE_URL` and `SUPABASE_API_KEY`. Locally we use `VITE_*`. Either set works at build time — `vite.config.js` maps them into the names the app reads:
+
+| App expects (baked into `dist/`) | Also accepted from Hostinger / env |
+| --- | --- |
+| `VITE_SUPABASE_URL` | `SUPABASE_URL` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `VITE_SUPABASE_ANON_KEY` or `SUPABASE_API_KEY` |
+
+Use the **publishable / anon** key only — never the service role key on Hostinger.
+
+Migrations and Edge Functions are still applied on Supabase (`supabase db push`, `supabase functions deploy`), not on Hostinger.
+
+1. **Build on Hostinger (Node.js + Git):** set the env vars above in the app’s environment, then let Hostinger run `npm run build`. Or build locally with `.env.local` and upload `dist/`.
+2. **Upload (manual path):** in hPanel open **File Manager** (or FTP) and upload the *contents* of `dist/` into `public_html` (or a subdomain folder). Include `.htaccess` so routes like `/calendar` work on refresh.
+3. **Turn on SSL** for the domain in hPanel so the app loads over `https://`.
+4. **Tell Supabase the address:** in **Authentication → URL Configuration**, set **Site URL** to `https://yourdomain.com` and add `https://yourdomain.com/**` under **Redirect URLs**.
+
+The `.htaccess` file is for Apache/LiteSpeed (Hostinger). On Netlify, Vercel, Cloudflare Pages, etc., enable their SPA fallback and set `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` (or the Hostinger-compatible aliases above).
 
 ## Project layout
 
