@@ -9,6 +9,7 @@ import {
 } from "@/lib/itemTypes";
 import {
   loadListPrefs, visiblePlanningTypes, orderedPlanningTypes, setListTypeHidden,
+  getListTypeColor, setListTypeColor,
 } from "@/lib/listPrefs";
 import ItemList from "@/components/ItemList";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
@@ -16,10 +17,12 @@ import CollapsibleListSection from "@/components/CollapsibleListSection";
 import BulkCompleteBar, { useListSelection } from "@/components/BulkCompleteBar";
 import ShoppingListActions from "@/components/ShoppingListActions";
 import StaplesPanel from "@/components/StaplesPanel";
+import ListColorButton from "@/components/ListColorButton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { loadListsFilters, saveListsFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
 import { giftBudgetRollup, formatMoney } from "@/lib/giftBudget";
+import { surfaceAccentStyle } from "@/lib/colorPalette";
 
 /** Types that count as “need scheduled” when they have no date/due (Home/Inbox). */
 const SCHEDULABLE_TYPES = ["todo", "errand", "event", "household"];
@@ -129,6 +132,8 @@ function ListHubCard({
   label,
   icon: Icon,
   toneClass,
+  accentColor,
+  colorControl,
   stats,
   onAdd,
   dimmed,
@@ -143,10 +148,17 @@ function ListHubCard({
         pastDue ? "border-attention/50" : "border-border",
         dimmed && "opacity-50"
       )}
+      style={accentColor ? surfaceAccentStyle(accentColor) : undefined}
     >
       <div className="flex items-start gap-2">
         <Link to={to} className="flex min-w-0 flex-1 items-start gap-2.5">
-          <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[6px] border", toneClass)}>
+          <span
+            className={cn(
+              "grid h-9 w-9 shrink-0 place-items-center rounded-[6px] border",
+              accentColor ? "border-border text-white" : toneClass
+            )}
+            style={accentColor ? { background: accentColor } : undefined}
+          >
             <Icon className="h-[18px] w-[18px]" />
           </span>
           <div className="min-w-0 flex-1">
@@ -172,6 +184,7 @@ function ListHubCard({
               <Plus className="h-4 w-4" />
             </button>
           )}
+          {colorControl}
           {hideToggle}
         </div>
       </div>
@@ -332,11 +345,16 @@ export default function Lists() {
     setListPrefs(setListTypeHidden(key, !isHidden));
   }
 
+  function setTypeColor(key, color) {
+    setListPrefs(setListTypeColor(key, color));
+  }
+
   if (!type) {
     const groceryStats = listHubStats(all.filter((i) => i.type === "grocery"));
     const allStats = listHubStats(all.filter((i) => i.type !== "grocery"));
     const hubTypes = showHidden ? orderedTypes : visibleTypes;
     const groceryTI = ITEM_TYPE_MAP.grocery;
+    const groceryColor = getListTypeColor("grocery", listPrefs);
 
     return (
       <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8">
@@ -371,8 +389,16 @@ export default function Lists() {
               label="Groceries"
               icon={ShoppingCart}
               toneClass={groceryTI.tone}
+              accentColor={groceryColor}
               stats={groceryStats}
               onAdd={() => setCreateDraft(blankCreateDraft("grocery"))}
+              colorControl={(
+                <ListColorButton
+                  color={groceryColor}
+                  label="Groceries list color"
+                  onChange={(c) => setTypeColor("grocery", c)}
+                />
+              )}
               footer={<ShopModeLink compact />}
             />
           </div>
@@ -394,6 +420,7 @@ export default function Lists() {
             {hubTypes.map((t) => {
               const stats = listHubStats(all.filter((i) => i.type === t.key));
               const isHidden = listPrefs.hidden.includes(t.key);
+              const listColor = getListTypeColor(t.key, listPrefs);
               return (
                 <ListHubCard
                   key={t.key}
@@ -401,9 +428,17 @@ export default function Lists() {
                   label={t.plural || t.label}
                   icon={t.icon}
                   toneClass={t.tone}
+                  accentColor={listColor}
                   stats={stats}
                   dimmed={isHidden}
                   onAdd={() => setCreateDraft(blankCreateDraft(t.key))}
+                  colorControl={(
+                    <ListColorButton
+                      color={listColor}
+                      label={`${t.plural || t.label} list color`}
+                      onChange={(color) => setTypeColor(t.key, color)}
+                    />
+                  )}
                   hideToggle={(
                     <button
                       type="button"
@@ -542,6 +577,7 @@ export default function Lists() {
   const TI = ITEM_TYPE_MAP[type];
   if (!TI) return <div className="p-8 text-center text-muted-foreground">Unknown list.</div>;
 
+  const listColor = getListTypeColor(type, listPrefs);
   const list = applyPeopleFilters(all.filter((i) => i.type === type).sort(sortItems), filterPerson, filterResponsible);
   const active = list.filter((i) => !i.completed);
   const done = list.filter((i) => i.completed);
@@ -575,11 +611,21 @@ export default function Lists() {
           <Link to="/lists" className="text-sm text-muted-foreground hover:text-foreground">Lists</Link>
           <span className="text-muted-foreground">/</span>
           <h1 className="page-title flex items-center gap-2">
-            <span className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", TI.tone)}><TI.icon className="h-4 w-4" /></span>
+            <span
+              className="grid h-8 w-8 place-items-center rounded-[6px] border border-border text-white"
+              style={{ background: listColor }}
+            >
+              <TI.icon className="h-4 w-4" />
+            </span>
             {type === "grocery" ? "Groceries" : (TI.plural || TI.label)}
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ListColorButton
+            color={listColor}
+            label={`${TI.plural || TI.label} list color`}
+            onChange={(c) => setTypeColor(type, c)}
+          />
           {type === "grocery" && (
             <>
               <ShoppingListActions items={active} title="Grocery list" />

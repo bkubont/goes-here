@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
   RotateCcw, Trash2, Paperclip, Plus, Loader2, Download, Upload, CalendarRange,
-  CalendarDays, UserCheck, LayoutList, Eye, EyeOff, ArrowUp, ArrowDown,
+  CalendarDays, UserCheck, LayoutList, Eye, EyeOff, ArrowUp, ArrowDown, ShoppingCart,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -20,7 +20,10 @@ import { formatDate } from "@/lib/itemTypes";
 import { cn } from "@/lib/utils";
 import {
   loadListPrefs, moveListType, orderedPlanningTypes, resetListPrefs, setListTypeHidden,
+  getListTypeColor, setListTypeColor,
 } from "@/lib/listPrefs";
+import ListColorButton from "@/components/ListColorButton";
+import { surfaceAccentStyle } from "@/lib/colorPalette";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { supabase } from "@/api/supabaseClient";
 import { loadWeekStartsOn, saveWeekStartsOn } from "@/lib/weekStart";
@@ -477,12 +480,32 @@ export default function Settings() {
           <p className="text-sm font-medium">Lists</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Show, hide, and reorder built-in list types on this device. Shopping (groceries) stays separate.
+          Show, hide, reorder, and set accent colors for built-in list types on this device. Shopping (groceries) stays separate.
+          List colors appear on the Lists hub only — not on Board cards.
         </p>
+        <div
+          className="flex min-h-[48px] items-center gap-2 rounded-[6px] border border-border px-2 py-1.5 mb-1.5"
+          style={surfaceAccentStyle(getListTypeColor("grocery", listPrefs), { tintAlpha: 0.06, borderWidth: 3 })}
+        >
+          <span
+            className="grid h-8 w-8 place-items-center rounded-[4px] border border-border shrink-0 text-white"
+            style={{ background: getListTypeColor("grocery", listPrefs) }}
+          >
+            <ShoppingCart className="h-3.5 w-3.5" />
+          </span>
+          <span className="flex-1 min-w-0 text-sm font-medium truncate">Groceries</span>
+          <span className="text-[10px] text-muted-foreground mr-1">Shopping</span>
+          <ListColorButton
+            color={getListTypeColor("grocery", listPrefs)}
+            label="Groceries list color"
+            onChange={(c) => setListPrefs(setListTypeColor("grocery", c))}
+          />
+        </div>
         <div className="space-y-1.5">
           {orderedPlanningTypes(listPrefs).map((t, idx) => {
             const Icon = t.icon;
             const hidden = listPrefs.hidden.includes(t.key);
+            const listColor = getListTypeColor(t.key, listPrefs);
             return (
               <div
                 key={t.key}
@@ -490,11 +513,20 @@ export default function Settings() {
                   "flex min-h-[48px] items-center gap-2 rounded-[6px] border border-border px-2 py-1.5",
                   hidden && "opacity-60"
                 )}
+                style={surfaceAccentStyle(listColor, { tintAlpha: 0.06, borderWidth: 3 })}
               >
-                <span className={cn("grid h-8 w-8 place-items-center rounded-[4px] border shrink-0", t.tone)}>
+                <span
+                  className="grid h-8 w-8 place-items-center rounded-[4px] border border-border shrink-0 text-white"
+                  style={{ background: listColor }}
+                >
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className="flex-1 min-w-0 text-sm font-medium truncate">{t.plural || t.label}</span>
+                <ListColorButton
+                  color={listColor}
+                  label={`${t.plural || t.label} list color`}
+                  onChange={(c) => setListPrefs(setListTypeColor(t.key, c))}
+                />
                 <button
                   type="button"
                   className="grid h-9 w-9 place-items-center rounded-[6px] hover:bg-accent disabled:opacity-30"
@@ -532,7 +564,7 @@ export default function Settings() {
           className="min-h-[40px]"
           onClick={() => setListPrefs(resetListPrefs())}
         >
-          Reset list order &amp; visibility
+          Reset list order, visibility &amp; colors
         </Button>
       </section>
 

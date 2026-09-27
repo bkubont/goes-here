@@ -38,6 +38,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { loadBoardFilters, saveBoardFilters, SAVED_FILTERS_HINT } from "@/lib/savedFilters";
+import { resolvePersonColor, personChipDotStyle } from "@/lib/personColor";
 
 function slugStatusKey(name, used) {
   let base = String(name || "column")
@@ -431,6 +432,9 @@ export default function Board() {
     const Icon = TI.icon;
     const dur = it.duration_minutes != null ? formatDuration(it.duration_minutes) : null;
     const currentKey = statusKeyOf(it, columns);
+    // Hierarchy: Board column/swimlane chrome wins — do not paint cards with
+    // list/person/project custom colors. Person chip stays a subtle dot only.
+    const personColor = resolvePersonColor(it.responsible_name, people);
     return (
       <div
         ref={dragProvided?.innerRef}
@@ -452,7 +456,20 @@ export default function Board() {
               </p>
               <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                 {dur && <span className="inline-flex items-center gap-0.5"><Clock className="h-3 w-3" />{dur}</span>}
-                {it.responsible_name && <span className="inline-flex items-center gap-0.5"><User className="h-3 w-3" />{it.responsible_name}</span>}
+                {it.responsible_name && (
+                  <span className="inline-flex items-center gap-0.5">
+                    {personColor ? (
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={personChipDotStyle(personColor)}
+                        aria-hidden
+                      />
+                    ) : (
+                      <User className="h-3 w-3" />
+                    )}
+                    {it.responsible_name}
+                  </span>
+                )}
                 {it.project_name && <span className="inline-flex items-center gap-0.5"><FolderKanban className="h-3 w-3" />{it.project_name}</span>}
               </div>
             </div>

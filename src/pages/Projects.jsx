@@ -13,8 +13,8 @@ import { ITEM_TYPES, ITEM_TYPE_MAP, formatDate } from "@/lib/itemTypes";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useDevicePerson } from "@/lib/devicePerson";
-
-const COLORS = ["#0404A9", "#CFAB59", "#555D6D", "#0505C7", "#1d4ed8", "#0A0A0A"];
+import { COLOR_PALETTE, normalizeToPalette, surfaceAccentStyle, solidColorStyle } from "@/lib/colorPalette";
+import ColorPicker from "@/components/ColorPicker";
 
 /** Notes and ideas don't count against incomplete progress. */
 const NON_ACTIONABLE = new Set(["note", "idea"]);
@@ -40,6 +40,7 @@ export default function Projects() {
   const [owner, setOwner] = React.useState("");
   const [targetDate, setTargetDate] = React.useState("");
   const [nextAction, setNextAction] = React.useState("");
+  const [addColor, setAddColor] = React.useState(COLOR_PALETTE[7]);
   const [saving, setSaving] = React.useState(false);
   const [typeFilter, setTypeFilter] = React.useState("all");
   const [addOpen, setAddOpen] = React.useState(false);
@@ -63,10 +64,11 @@ export default function Projects() {
         owner_name: owner.trim() || null,
         target_date: targetDate || null,
         next_action: nextAction.trim() || null,
-        color: COLORS[list.length % COLORS.length],
+        color: normalizeToPalette(addColor, COLOR_PALETTE[list.length % COLOR_PALETTE.length]),
       });
       await invalidateAll();
       setName(""); setDesc(""); setOwner(""); setTargetDate(""); setNextAction("");
+      setAddColor(COLOR_PALETTE[(list.length + 1) % COLOR_PALETTE.length]);
       setAdding(false);
     } catch (err) {
       toast({ title: "Couldn't add project", description: err.message, variant: "destructive" });
@@ -85,6 +87,7 @@ export default function Projects() {
         owner_name: metaForm.owner_name?.trim() || null,
         target_date: metaForm.target_date || null,
         next_action: metaForm.next_action?.trim() || null,
+        color: normalizeToPalette(metaForm.color, COLOR_PALETTE[7]),
       });
       await invalidateAll();
       setEditingMeta(false);
@@ -138,7 +141,12 @@ export default function Projects() {
           ← All projects
         </button>
         <div className="flex items-start gap-3 mb-4">
-          <span className="grid h-11 w-11 place-items-center rounded-xl text-white shrink-0" style={{ background: proj?.color }}><FolderKanban className="h-5 w-5" /></span>
+          <span
+            className="grid h-11 w-11 place-items-center rounded-xl text-white shrink-0"
+            style={solidColorStyle(normalizeToPalette(proj?.color, COLOR_PALETTE[7]))}
+          >
+            <FolderKanban className="h-5 w-5" />
+          </span>
           <div className="min-w-0 flex-1">
             <h1 className="page-title">{proj?.name}</h1>
             {proj?.description ? (
@@ -154,6 +162,7 @@ export default function Projects() {
               owner_name: proj.owner_name || "",
               target_date: proj.target_date || "",
               next_action: proj.next_action || "",
+              color: normalizeToPalette(proj.color, COLOR_PALETTE[7]),
             });
             setEditingMeta(true);
           }}>
@@ -181,6 +190,14 @@ export default function Projects() {
               <Label>Next action</Label>
               <Input value={metaForm.next_action} onChange={(e) => setMetaForm((f) => ({ ...f, next_action: e.target.value }))} placeholder="Next concrete step" />
             </div>
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <ColorPicker
+                value={metaForm.color}
+                onChange={(c) => setMetaForm((f) => ({ ...f, color: c }))}
+                label={`Color for ${proj?.name || "project"}`}
+              />
+            </div>
             <datalist id="proj-people">
               {peopleNames.map((n) => <option key={n} value={n} />)}
             </datalist>
@@ -191,7 +208,10 @@ export default function Projects() {
           </form>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-3 mb-6">
+        <div
+          className="grid gap-3 sm:grid-cols-3 mb-6 rounded-xl border border-border p-1"
+          style={surfaceAccentStyle(normalizeToPalette(proj?.color, COLOR_PALETTE[7]), { tintAlpha: 0.06 })}
+        >
           <div className="rounded-xl border border-border bg-card px-3 py-3">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Owner</p>
             <p className="text-sm font-medium mt-1">{proj?.owner_name || "Unassigned"}</p>
@@ -336,6 +356,14 @@ export default function Projects() {
             <Label>Next action</Label>
             <Input value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="First concrete step" />
           </div>
+          <div className="space-y-1.5">
+            <Label>Color</Label>
+            <ColorPicker
+              value={addColor}
+              onChange={setAddColor}
+              label="Color for new project"
+            />
+          </div>
           <div className="flex gap-2">
             <Button type="submit" disabled={saving || !name.trim()} className="min-h-[44px]">
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />} Create
@@ -350,9 +378,21 @@ export default function Projects() {
           {list.map((p) => {
             const theirs = allItems.filter((i) => i.project_name === p.name);
             const progress = projectProgress(theirs);
+            const accent = normalizeToPalette(p.color, COLOR_PALETTE[7]);
             return (
-              <button key={p.id} type="button" onClick={() => setSelected(p.id)} className="flex min-h-[64px] items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:shadow-sm transition">
-                <span className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: p.color }}><FolderKanban className="h-[18px] w-[18px]" /></span>
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelected(p.id)}
+                className="flex min-h-[64px] items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:shadow-sm transition"
+                style={surfaceAccentStyle(accent, { tintAlpha: 0.07 })}
+              >
+                <span
+                  className="grid h-10 w-10 place-items-center rounded-xl text-white"
+                  style={solidColorStyle(accent)}
+                >
+                  <FolderKanban className="h-[18px] w-[18px]" />
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{p.name}</p>
                   <p className="text-xs text-muted-foreground truncate">
