@@ -1,5 +1,5 @@
 import React from "react";
-import { Trash2, Loader2, Save, ChevronDown, Bell, Repeat, SkipForward, Split } from "lucide-react";
+import { Trash2, Loader2, Save, ChevronDown, Bell, Repeat, SkipForward, Split, CalendarPlus } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -34,6 +34,7 @@ import {
   oneOffFromOccurrence,
 } from "@/lib/recurring";
 import { REMINDER_OPTIONS, formatReminderState } from "@/lib/reminders";
+import { downloadItemIcs } from "@/lib/ics";
 import ItemAttachments from "@/components/ItemAttachments";
 
 function buildForm(item) {
@@ -601,6 +602,53 @@ export default function ItemDetailDrawer({ item, open, onOpenChange }) {
 
       {!isVirtual && (
         <ItemAttachments itemId={recordId} disabled={saving} />
+      )}
+
+      {(form.date || item.date) && (
+        <div className="pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full min-h-[44px]"
+            onClick={() => {
+              const snapshot = {
+                ...item,
+                ...form,
+                id: recordId,
+                content: form.content,
+                date: form.date
+                  ? new Date(`${form.date}T${form.time || "09:00"}:00`).toISOString()
+                  : item.date,
+                time: form.time || item.time || "",
+                duration_minutes: form.duration_minutes === "" || form.duration_minutes == null
+                  ? item.duration_minutes
+                  : Number(form.duration_minutes),
+                location: form.location || item.location,
+                notes: form.notes || item.notes,
+                store: form.store || item.store,
+              };
+              const ok = downloadItemIcs(snapshot);
+              if (ok) {
+                toast({
+                  title: "Calendar file downloaded",
+                  description: "Open the .ics file to add it to your device calendar. Times are local wall-clock (floating).",
+                });
+              } else {
+                toast({
+                  title: "Needs a date",
+                  description: "Set a scheduled date before exporting to calendar.",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            <CalendarPlus className="h-4 w-4 mr-2" />
+            Add to calendar
+          </Button>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Downloads a .ics file (one-way). Not two-way Google/Apple sync.
+          </p>
+        </div>
       )}
     </div>
   );

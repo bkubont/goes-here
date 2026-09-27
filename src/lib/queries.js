@@ -57,6 +57,7 @@ export async function invalidateAll() {
     queryClientInstance.invalidateQueries({ queryKey: ["projects"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["attachments"] }),
     queryClientInstance.invalidateQueries({ queryKey: ["items-trash"] }),
+    queryClientInstance.invalidateQueries({ queryKey: ["familyMembers"] }),
   ]);
   await Promise.all([
     queryClientInstance.refetchQueries({ queryKey: ["items"], type: "all" }),
@@ -64,6 +65,7 @@ export async function invalidateAll() {
     queryClientInstance.refetchQueries({ queryKey: ["projects"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["attachments"], type: "all" }),
     queryClientInstance.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
+    queryClientInstance.refetchQueries({ queryKey: ["familyMembers"], type: "all" }),
   ]);
 }
 
@@ -120,6 +122,22 @@ export function useProjects() {
   });
 }
 
+export function useFamilyMembers() {
+  return useQuery({
+    queryKey: ["familyMembers"],
+    queryFn: async () => entities.FamilyMember.list("email", 200),
+    staleTime: 0,
+  });
+}
+
+export function patchFamilyMemberCaches(recipe) {
+  const entries = queryClientInstance.getQueriesData({ queryKey: ["familyMembers"] });
+  for (const [key, data] of entries) {
+    if (!Array.isArray(data)) continue;
+    queryClientInstance.setQueryData(key, recipe(data));
+  }
+}
+
 export function useInvalidate() {
   const qc = useQueryClient();
   return async () => {
@@ -129,6 +147,7 @@ export function useInvalidate() {
       qc.invalidateQueries({ queryKey: ["projects"] }),
       qc.invalidateQueries({ queryKey: ["attachments"] }),
       qc.invalidateQueries({ queryKey: ["items-trash"] }),
+      qc.invalidateQueries({ queryKey: ["familyMembers"] }),
     ]);
     await Promise.all([
       qc.refetchQueries({ queryKey: ["items"], type: "all" }),
@@ -136,6 +155,7 @@ export function useInvalidate() {
       qc.refetchQueries({ queryKey: ["projects"], type: "all" }),
       qc.refetchQueries({ queryKey: ["attachments"], type: "all" }),
       qc.refetchQueries({ queryKey: ["items-trash"], type: "all" }),
+      qc.refetchQueries({ queryKey: ["familyMembers"], type: "all" }),
     ]);
   };
 }

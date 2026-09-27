@@ -2,27 +2,46 @@ import React from "react";
 import { Link } from "react-router-dom";
 import {
   User, Users, Clock, HelpCircle, Archive, LogOut, ChevronRight, CheckSquare,
-  RotateCcw, Trash2, Paperclip,
+  RotateCcw, Trash2, Paperclip, Plus, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { useItems, useDeletedItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
+import {
+  useItems, useDeletedItems, useFamilyMembers, invalidateAll,
+  patchItemsCaches, patchFamilyMemberCaches,
+} from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { completionPatch } from "@/lib/estimateDuration";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDate } from "@/lib/itemTypes";
 import { cn } from "@/lib/utils";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { supabase } from "@/api/supabaseClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const TZ_KEY = "goeshere.timezone";
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
 
 export default function Settings() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const { data: items } = useItems({});
   const { data: trashItems, isLoading: trashLoading } = useDeletedItems();
+  const { data: familyMembers, isLoading: membersLoading, error: membersError } = useFamilyMembers();
   const [timezone, setTimezone] = React.useState(() => {
     try {
       return localStorage.getItem(TZ_KEY) || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
@@ -34,6 +53,13 @@ export default function Settings() {
   const [archiveTab, setArchiveTab] = React.useState("completed"); // completed | trash
   const [active, setActive] = React.useState(null);
   const [busyId, setBusyId] = React.useState(null);
+  const [newEmail, setNewEmail] = React.useState("");
+  const [addingMember, setAddingMember] = React.useState(false);
+  const [removeTarget, setRemoveTarget] = React.useState(null);
+  const [removing, setRemoving] = React.useState(false);
+
+  const members = familyMembers || [];
+  const myEmail = normalizeEmail(user?.email);
 
   const completed = React.useMemo(() => {
     return (items || [])
@@ -113,6 +139,72 @@ export default function Settings() {
     }
   }
 
+  async function addMember(e) {
+    e.preventDefault();
+    const email = normalizeEmail(newEmail);
+    if (!email || !email.includes("@")) {
+      toast({ title: "Enter a valid email", variant: "destructive" });
+      return;
+    }
+    if (members.some((m) => normalizeEmail(m.email) === email)) {
+      toast({ title: "Already on the list", description: email });
+      return;
+    }
+    setAddingMember(true);
+    try {
+      const row = await entities.FamilyMember.create({ email });
+      patchFamilyMemberCaches((list) =>
+        [...list, row].sort((a, b) => a.email.localeCompare(b.email))
+      );
+      await invalidateAll();
+      setNewEmail("");
+      toast({
+        title: "Email added",
+        description: `${email} can sign in once they create a GoesHere account with this address.`,
+      });
+    } catch (err) {
+      toast({ title: "Couldn't add email", description: err.message, variant: "destructive" });
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
+  async function confirmRemoveMember() {
+    if (!removeTarget) return;
+    const email = removeTarget.email;
+    const isSelf = normalizeEmail(email) === myEmail;
+    const isLast = members.length <= 1;
+    if (isLast) {
+      toast({
+        title: "Can't remove the last member",
+        description: "That would lock everyone out of GoesHere. Add another email first.",
+        variant: "destructive",
+      });
+      setRemoveTarget(null);
+      return;
+    }
+    setRemoving(true);
+    try {
+      await entities.FamilyMember.deleteByEmail(email);
+      patchFamilyMemberCaches((list) => list.filter((m) => m.email !== email));
+      await invalidateAll();
+      toast({
+        title: "Email removed",
+        description: isSelf
+          ? "You removed yourself. Sign out and you may lose access on next login."
+          : `${email} can no longer access this household.`,
+      });
+      setRemoveTarget(null);
+    } catch (err) {
+      toast({ title: "Couldn't remove", description: err.message, variant: "destructive" });
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  const removeIsSelf = removeTarget && normalizeEmail(removeTarget.email) === myEmail;
+  const removeIsLast = members.length <= 1;
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8 space-y-6">
       <header>
@@ -147,14 +239,86 @@ export default function Settings() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Household</p>
-            <p className="text-xs text-muted-foreground">Family members shared with this GoesHere list.</p>
+            <p className="text-xs text-muted-foreground">
+              Who can sign in. People names (for assigning items) are separate.
+            </p>
           </div>
         </div>
+
+        <div className="px-4 py-3 space-y-3 border-b border-border">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Access emails ({members.length})
+          </p>
+          {membersError && (
+            <p className="text-xs text-destructive">
+              Couldn&apos;t load allowlist — run the family_members RLS migration if this is new.
+              {" "}({membersError.message})
+            </p>
+          )}
+          {membersLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : members.length === 0 && !membersError ? (
+            <p className="text-sm text-muted-foreground">No emails on the allowlist yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {members.map((m) => {
+                const isYou = normalizeEmail(m.email) === myEmail;
+                return (
+                  <li
+                    key={m.email}
+                    className="flex items-center gap-2 rounded-[6px] border border-border bg-muted/20 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{m.email}</p>
+                      {isYou && (
+                        <p className="text-[11px] text-muted-foreground">You</p>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-[40px] shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => setRemoveTarget(m)}
+                      aria-label={`Remove ${m.email}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <form onSubmit={addMember} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="Add email address"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              className="min-h-[44px] flex-1"
+            />
+            <Button type="submit" disabled={addingMember} className="min-h-[44px] shrink-0">
+              {addingMember ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Plus className="h-4 w-4 mr-1" />
+              )}
+              Add
+            </Button>
+          </form>
+          <p className="text-[11px] text-muted-foreground">
+            They must use this exact email when signing up or signing in. Adding here does not send an invite.
+          </p>
+        </div>
+
         <Link
           to="/people"
           className="flex min-h-[52px] items-center justify-between px-4 py-3 text-sm hover:bg-accent/50"
         >
-          Manage people
+          Manage people (names &amp; roles)
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </Link>
       </section>
@@ -326,6 +490,49 @@ export default function Settings() {
       </section>
 
       <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+
+      <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {removeIsSelf ? "Remove your own access?" : "Remove this email?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Remove <span className="font-medium text-foreground">{removeTarget?.email}</span> from
+                  the household allowlist?
+                </p>
+                {removeIsLast && (
+                  <p className="text-destructive">
+                    This is the only email on the list. Removing it would lock everyone out —
+                    add another member first.
+                  </p>
+                )}
+                {!removeIsLast && removeIsSelf && (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    You are removing yourself. After sign-out you will need another household member
+                    to add you back.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removing || removeIsLast}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmRemoveMember();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {removing ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
