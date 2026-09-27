@@ -286,7 +286,9 @@ export function UnscheduledPool({
       </p>
       <div className="space-y-1.5 max-h-[50vh] overflow-y-auto scrollbar-thin">
         {(items || []).length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-4">Pool is empty.</p>
+          <p className="text-xs text-muted-foreground text-center py-4 px-1 leading-relaxed">
+            Nothing to schedule. Inbox items, to-schedule, undated todos, and things due or dated this day without a time show up here.
+          </p>
         )}
         {(items || []).map((it) => {
           const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
