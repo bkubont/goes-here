@@ -1,6 +1,6 @@
 import React from "react";
 import { Plus, Loader2, Pencil } from "lucide-react";
-import { usePeople, useItems, invalidateAll } from "@/lib/queries";
+import { usePeople, useItems, invalidateAll, patchPeopleCaches, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,12 +59,13 @@ export default function People() {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await entities.Person.create({
+      const row = await entities.Person.create({
         name: name.trim(),
         role: role.trim(),
         color: COLORS[list.length % COLORS.length],
       });
-      invalidateAll();
+      if (row) patchPeopleCaches((people) => [...people, row].sort((a, b) => a.name.localeCompare(b.name)));
+      await invalidateAll();
       setName(""); setRole("");
     } catch (err) {
       toast({ title: "Couldn't add person", description: err.message, variant: "destructive" });
@@ -92,17 +93,30 @@ export default function People() {
     const nextName = editForm.name.trim();
     const oldName = person.name;
     try {
-      await entities.Person.update(person.id, {
+      const row = await entities.Person.update(person.id, {
         name: nextName,
         role: editForm.role.trim(),
         color: editForm.color || COLORS[0],
         birthday: editForm.birthday || null,
         notes: editForm.notes.trim(),
       });
+      if (row) {
+        patchPeopleCaches((people) =>
+          people.map((p) => (p.id === person.id ? { ...p, ...row } : p))
+        );
+      }
       if (oldName !== nextName) {
         await cascadePersonRename(oldName, nextName, allItems);
+        patchItemsCaches((items) =>
+          items.map((it) => {
+            const next = { ...it };
+            if (it.person_name === oldName) next.person_name = nextName;
+            if (it.responsible_name === oldName) next.responsible_name = nextName;
+            return next;
+          })
+        );
       }
-      invalidateAll();
+      await invalidateAll();
       setEditing(false);
       toast({ title: "Person updated" });
     } catch (err) {

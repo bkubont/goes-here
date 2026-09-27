@@ -3,9 +3,9 @@ import { entities } from "@/api/entities";
 import { ITEM_TYPE_MAP, formatDate, formatTime, isOverdue } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
 import { completionPatch } from "@/lib/estimateDuration";
-import { invalidateAll } from "@/lib/queries";
+import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { Check, CalendarDays, User, FolderKanban, AlertCircle, Repeat, Clock } from "lucide-react";
+import { Check, CalendarDays, User, UserCheck, FolderKanban, AlertCircle, Repeat, Clock } from "lucide-react";
 
 export default function ItemCard({ item, onOpen }) {
   const TI = ITEM_TYPE_MAP[item.type] || ITEM_TYPE_MAP.todo;
@@ -15,9 +15,11 @@ export default function ItemCard({ item, onOpen }) {
 
   async function toggle(e) {
     e.stopPropagation();
+    const patch = completionPatch(item, !item.completed);
     try {
-      await entities.Item.update(item.id, completionPatch(item, !item.completed));
-      invalidateAll();
+      const row = await entities.Item.update(item.id, patch);
+      patchItemsCaches((list) => list.map((i) => (i.id === item.id ? { ...i, ...row } : i)));
+      await invalidateAll();
     } catch (e2) { /* bubble */ }
   }
 
@@ -59,7 +61,14 @@ export default function ItemCard({ item, onOpen }) {
             <Icon className="h-3 w-3" /> {TI.label}
           </span>
           {item.person_name && (
-            <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> {item.person_name}</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5">
+              <User className="h-3 w-3" /> {item.person_name}
+            </span>
+          )}
+          {item.responsible_name && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 text-sky-800 px-1.5 py-0.5 font-medium">
+              <UserCheck className="h-3 w-3" /> {item.responsible_name}
+            </span>
           )}
           {item.date && (
             <span className={cn("inline-flex items-center gap-1", overdue && "text-destructive font-medium")}>

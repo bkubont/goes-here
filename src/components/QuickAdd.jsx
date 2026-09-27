@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import { parseQuickAdd } from "@/lib/quickAdd";
 import { ITEM_TYPE_MAP } from "@/lib/itemTypes";
-import { usePeople, useProjects, useItems, invalidateAll } from "@/lib/queries";
+import { usePeople, useProjects, useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { applyDurationEstimate } from "@/lib/estimateDuration";
 
 function toDateISO(dateStr, timeStr) {
@@ -136,9 +136,12 @@ export default function QuickAdd({ open, onOpenChange }) {
       if (flight.cancelled) return;
       const drafts = normalizeParsed(parsed, text);
       const records = toRecords(drafts, allItems || []);
-      await entities.Item.bulkCreate(records);
+      const created = await entities.Item.bulkCreate(records);
       if (flight.cancelled) return;
-      invalidateAll();
+      if (Array.isArray(created) && created.length) {
+        patchItemsCaches((list) => [...created, ...list]);
+      }
+      await invalidateAll();
       toast({
         title: `Added ${records.length} item${records.length > 1 ? "s" : ""}`,
         description: "Edit anytime from lists or calendar.",
