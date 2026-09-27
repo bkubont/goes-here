@@ -44,7 +44,7 @@ export default function Login() {
     <AuthLayout
       icon={LogIn}
       title="Welcome back"
-      subtitle="Log in to your account"
+      subtitle="Log in to GoesHere"
       footer={
         <>
           Don't have an account?{" "}

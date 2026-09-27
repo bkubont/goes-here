@@ -20,6 +20,7 @@ import Projects from '@/pages/Projects';
 import SearchPage from '@/pages/SearchPage';
 import Inbox from '@/pages/Inbox';
 import Board from '@/pages/Board';
+import Settings from '@/pages/Settings';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -51,6 +52,7 @@ const AuthenticatedApp = () => {
           <Route path="/projects" element={<Projects />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/inbox" element={<Inbox />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

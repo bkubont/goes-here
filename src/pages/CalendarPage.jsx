@@ -1,11 +1,10 @@
 import React from "react";
-import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
+import { ChevronLeft, ChevronRight, Repeat, Clock } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { useItems } from "@/lib/queries";
+import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
-import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
+import { ITEM_TYPE_MAP, formatTime, toDayKey, formatDate } from "@/lib/itemTypes";
 import { expandRecurring } from "@/lib/recurring";
-import { invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
@@ -13,10 +12,11 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Types families typically time-block (not grocery/bills/notes). */
 const POOL_TYPES = new Set([
   "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
 ]);
@@ -25,21 +25,14 @@ function hasClockTime(it) {
   return !!(it.time && String(it.time).trim());
 }
 
-/** Unscheduled / to_schedule / due-or-dated today without time / inbox. */
 function isPoolCandidate(it, dayKey) {
   if (!it || it.completed) return false;
-  // Already has a clock time — belongs on a day grid, not the pool.
   if (hasClockTime(it)) return false;
-
   if (it.type === "to_schedule" || it.inbox) return true;
-
   const dateKey = toDayKey(it.date);
   const dueKey = toDayKey(it.due_date);
   if (dayKey && (dateKey === dayKey || dueKey === dayKey)) return true;
-
-  // Undated actionable work that still needs a slot.
   if (!dateKey && !dueKey && POOL_TYPES.has(it.type)) return true;
-
   return false;
 }
 
@@ -54,7 +47,16 @@ export default function CalendarPage() {
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
-  const view = viewParam === "month" ? "month" : "day"; // day default for plan-today
+  const tabParam = searchParams.get("tab");
+  // Phone defaults to Agenda; desktop to Day.
+  const view = viewParam === "month"
+    ? "month"
+    : viewParam === "day"
+      ? "day"
+      : viewParam === "agenda"
+        ? "agenda"
+        : (isMobile ? "agenda" : "day");
+  const showUnscheduled = tabParam === "unscheduled" || (!isMobile && view === "day");
 
   const [cursor, setCursor] = React.useState(() => {
     const d = new Date();
@@ -64,6 +66,9 @@ export default function CalendarPage() {
   const [active, setActive] = React.useState(null);
   const [poolSelected, setPoolSelected] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
+  const [scheduleTarget, setScheduleTarget] = React.useState(null);
+  const [scheduleTime, setScheduleTime] = React.useState("09:00");
+  const [scheduleDate, setScheduleDate] = React.useState(() => toDayKey(new Date()));
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -74,8 +79,10 @@ export default function CalendarPage() {
   const rangeStart = view === "month"
     ? new Date(year, month, 1)
     : (() => { const d = new Date(selected); d.setHours(0, 0, 0, 0); return d; })();
-  const rangeEnd = view === "month"
-    ? new Date(year, month, daysInMonth)
+  const rangeEnd = view === "month" || view === "agenda"
+    ? (view === "agenda"
+      ? (() => { const d = new Date(selected); d.setDate(d.getDate() + 13); d.setHours(23, 59, 59, 999); return d; })()
+      : new Date(year, month, daysInMonth))
     : (() => { const d = new Date(selected); d.setHours(23, 59, 59, 999); return d; })();
 
   const byDay = React.useMemo(() => {
@@ -96,8 +103,6 @@ export default function CalendarPage() {
   const selKey = toDayKey(selected);
   const selItems = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
-  // Unscheduled pool: actionable items the family can drag onto this day's grid.
-  // Timed items stay on the grid; completed stay out.
   const poolItems = React.useMemo(() => {
     return all.filter((it) => isPoolCandidate(it, selKey));
   }, [all, selKey]);
@@ -119,22 +124,37 @@ export default function CalendarPage() {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [dayForWorkload, workloadPerson, all]);
 
+  const agendaDays = React.useMemo(() => {
+    const days = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(selected);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + i);
+      const k = toDayKey(d);
+      days.push({ date: d, key: k, items: (byDay[k] || []).sort((a, b) => (a.time || "").localeCompare(b.time || "")) });
+    }
+    return days;
+  }, [selected, byDay]);
+
   function setView(v) {
     const next = new URLSearchParams(searchParams);
-    if (v === "day") next.delete("view");
+    if (v === "day" && !isMobile) next.delete("view");
     else next.set("view", v);
+    if (v !== "day") next.delete("tab");
+    setSearchParams(next, { replace: true });
+  }
+
+  function setTab(tab) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === "schedule") next.delete("tab");
+    else next.set("tab", tab);
     setSearchParams(next, { replace: true });
   }
 
   async function persistSchedule(it, time, dayKey) {
     const id = recordId(it);
     const dateISO = new Date(`${dayKey}T${time || "09:00"}:00`).toISOString();
-    const patch = {
-      date: dateISO,
-      time: time || "",
-      inbox: false,
-    };
-    // Booking a to_schedule turns it into an event when it gets a time.
+    const patch = { date: dateISO, time: time || "", inbox: false };
     if (it.type === "to_schedule") patch.type = "event";
     try {
       const row = await entities.Item.update(id, patch);
@@ -142,7 +162,10 @@ export default function CalendarPage() {
       await invalidateAll();
       if (it.recurring) {
         toast({ title: "Scheduled", description: "Updates all repeats of this series." });
+      } else {
+        toast({ title: "Scheduled" });
       }
+      setScheduleTarget(null);
     } catch (e) {
       toast({ title: "Could not schedule", description: e.message, variant: "destructive" });
     }
@@ -173,56 +196,80 @@ export default function CalendarPage() {
     setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
   }
 
+  function openSchedule(it) {
+    setScheduleTarget(it);
+    setScheduleTime(it.time || "09:00");
+    setScheduleDate(toDayKey(it.date) || toDayKey(selected) || todayKey);
+  }
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold">
+          <h1 className="page-title">
             {view === "day"
               ? selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
-              : cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+              : view === "agenda"
+                ? "Agenda"
+                : cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
           </h1>
           {view === "day" && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Plan today — drag from the pool or resize blocks (device-local time).
+              Plan the day — drag or use Schedule without dragging.
             </p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-border p-0.5">
+          <div className="flex rounded-[6px] border border-border p-0.5 bg-card">
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setView("agenda")}
+                className={cn("rounded-[4px] px-3 min-h-[40px] text-sm", view === "agenda" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
+              >
+                Agenda
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => setView("day")}
-              className={cn("rounded-md px-3 h-8 text-sm", view === "day" ? "bg-brand text-brand-foreground" : "hover:bg-accent")}
+              className={cn("rounded-[4px] px-3 min-h-[40px] text-sm", view === "day" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
             >
               Day
             </button>
             <button
+              type="button"
               onClick={() => setView("month")}
-              className={cn("rounded-md px-3 h-8 text-sm", view === "month" ? "bg-brand text-brand-foreground" : "hover:bg-accent")}
+              className={cn("rounded-[4px] px-3 min-h-[40px] text-sm", view === "month" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
             >
               Month
             </button>
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => (view === "day" ? shiftDay(-1) : setCursor(new Date(year, month - 1, 1)))}
-              className="grid h-9 w-9 place-items-center rounded-lg border border-border hover:bg-accent"
+              type="button"
+              onClick={() => (view === "month" ? setCursor(new Date(year, month - 1, 1)) : shiftDay(view === "agenda" ? -7 : -1))}
+              className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
+              aria-label="Previous"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
+              type="button"
               onClick={() => {
                 const now = new Date();
                 setCursor(new Date(now.getFullYear(), now.getMonth(), 1));
                 setSelected(now);
               }}
-              className="rounded-lg border border-border px-3 h-9 text-sm hover:bg-accent"
+              className="rounded-[6px] border border-border px-3 min-h-[44px] text-sm hover:bg-accent"
             >
               Today
             </button>
             <button
-              onClick={() => (view === "day" ? shiftDay(1) : setCursor(new Date(year, month + 1, 1)))}
-              className="grid h-9 w-9 place-items-center rounded-lg border border-border hover:bg-accent"
+              type="button"
+              onClick={() => (view === "month" ? setCursor(new Date(year, month + 1, 1)) : shiftDay(view === "agenda" ? 7 : 1))}
+              className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
+              aria-label="Next"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -230,72 +277,150 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {view === "day" ? (
-        <div className="space-y-4">
-          {/* Family workload differentiator */}
-          <div className="rounded-2xl border border-border bg-card p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <h3 className="font-display text-sm font-semibold">Family workload</h3>
-              <select
-                value={workloadPerson}
-                onChange={(e) => setWorkloadPerson(e.target.value)}
-                className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-              >
-                <option value="all">Everyone</option>
-                {responsibleNames.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-                <option value="Unassigned">Unassigned</option>
-              </select>
-            </div>
-            {workload.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No timed blocks yet for this filter.</p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {workload.map(([name, mins]) => (
-                  <div key={name} className="min-w-[120px]">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium">{name}</span>
-                      <span className="text-muted-foreground">{formatDuration(mins)}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-brand"
-                        style={{ width: `${Math.min(100, (mins / 480) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="grid lg:grid-cols-[1fr_280px] gap-4">
-            <DayGrid
-              day={selected}
-              items={selItems}
-              allItems={all}
-              poolItems={poolItems}
-              selectedPoolId={poolSelected}
-              onSelectPoolItem={setPoolSelected}
-              onOpenItem={setActive}
-              onSchedule={persistSchedule}
-              onMove={persistMove}
-              onResize={persistResize}
-            />
-            <UnscheduledPool
-              items={poolItems}
-              allItems={all}
-              selectedId={poolSelected}
-              onSelect={setPoolSelected}
-              onOpenItem={setActive}
-              isMobile={isMobile}
-            />
-          </div>
+      {/* Mobile tabs: Schedule | Unscheduled */}
+      {(view === "day" || view === "agenda") && isMobile && (
+        <div className="flex gap-1 mb-4 rounded-[6px] border border-border bg-card p-0.5">
+          <button
+            type="button"
+            onClick={() => setTab("schedule")}
+            className={cn("flex-1 min-h-[44px] rounded-[4px] text-sm font-medium", !showUnscheduled || tabParam !== "unscheduled" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}
+          >
+            Schedule
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("unscheduled")}
+            className={cn("flex-1 min-h-[44px] rounded-[4px] text-sm font-medium", tabParam === "unscheduled" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}
+          >
+            Unscheduled{poolItems.length ? ` (${poolItems.length})` : ""}
+          </button>
         </div>
-      ) : (
+      )}
+
+      {view === "agenda" && tabParam !== "unscheduled" && (
+        <div className="space-y-5">
+          {agendaDays.map(({ date, key, items: dayItems }) => (
+            <section key={key}>
+              <button
+                type="button"
+                onClick={() => { setSelected(date); setView("day"); }}
+                className="mb-2 flex items-baseline gap-2 text-left"
+              >
+                <h2 className="font-heading text-sm font-semibold">
+                  {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                </h2>
+                {key === todayKey && <span className="text-[11px] font-medium text-primary">Today</span>}
+              </button>
+              {dayItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground pl-1">Nothing scheduled</p>
+              ) : (
+                <div className="space-y-2">
+                  {dayItems.map((it) => {
+                    const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+                    return (
+                      <div key={it.id} className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setActive(it)}>
+                          <div className="flex items-center gap-2">
+                            {it.time && <span className="text-xs font-semibold text-primary shrink-0">{formatTime(it.time)}</span>}
+                            <span className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-60")}>{it.content}</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {TI.label}{it.responsible_name ? ` · ${it.responsible_name}` : ""}
+                          </p>
+                        </button>
+                        <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => openSchedule(it)}>
+                          Reschedule
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+
+      {view === "agenda" && tabParam === "unscheduled" && (
+        <UnscheduledList items={poolItems} onOpen={setActive} onSchedule={openSchedule} />
+      )}
+
+      {view === "day" && (
+        <div className="space-y-4">
+          {(!isMobile || tabParam !== "unscheduled") && (
+            <>
+              <div className="rounded-xl border border-border bg-card p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <h3 className="font-heading text-sm font-semibold">Family workload</h3>
+                  <select
+                    value={workloadPerson}
+                    onChange={(e) => setWorkloadPerson(e.target.value)}
+                    className="h-10 rounded-[6px] border border-border bg-background px-2 text-xs"
+                  >
+                    <option value="all">Everyone</option>
+                    {responsibleNames.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                    <option value="Unassigned">Unassigned</option>
+                  </select>
+                </div>
+                {workload.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No timed blocks yet for this filter.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-3">
+                    {workload.map(([name, mins]) => (
+                      <div key={name} className="min-w-[120px]">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="font-medium">{name}</span>
+                          <span className="text-muted-foreground">{formatDuration(mins)}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (mins / 480) * 100)}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
+                <DayGrid
+                  day={selected}
+                  items={selItems}
+                  allItems={all}
+                  poolItems={poolItems}
+                  selectedPoolId={poolSelected}
+                  onSelectPoolItem={setPoolSelected}
+                  onOpenItem={setActive}
+                  onSchedule={persistSchedule}
+                  onMove={persistMove}
+                  onResize={persistResize}
+                />
+                {!isMobile && (
+                  <div className="space-y-3">
+                    <UnscheduledPool
+                      items={poolItems}
+                      allItems={all}
+                      selectedId={poolSelected}
+                      onSelect={setPoolSelected}
+                      onOpenItem={setActive}
+                      isMobile={false}
+                    />
+                    <UnscheduledList items={poolItems.slice(0, 8)} onOpen={setActive} onSchedule={openSchedule} compact />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          {isMobile && tabParam === "unscheduled" && (
+            <UnscheduledList items={poolItems} onOpen={setActive} onSchedule={openSchedule} />
+          )}
+        </div>
+      )}
+
+      {view === "month" && (
         <div className="grid lg:grid-cols-[1fr_300px] gap-6">
-          <div className="rounded-2xl border border-border bg-card p-3">
+          <div className="rounded-xl border border-border bg-card p-3">
             <div className="grid grid-cols-7 mb-2">
               {DOW.map((d) => <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>)}
             </div>
@@ -309,25 +434,19 @@ export default function CalendarPage() {
                 return (
                   <button
                     key={i}
-                    onClick={() => {
-                      setSelected(d);
-                      setView("day");
-                    }}
+                    type="button"
+                    onClick={() => { setSelected(d); setView("day"); }}
                     className={cn(
-                      "aspect-square sm:aspect-auto sm:min-h-[64px] rounded-lg border p-1.5 text-left transition flex flex-col",
-                      isSel ? "border-brand bg-brand/5" : "border-transparent hover:border-border hover:bg-accent/50"
+                      "aspect-square sm:aspect-auto sm:min-h-[64px] rounded-[6px] border p-1.5 text-left transition flex flex-col min-h-[44px]",
+                      isSel ? "border-primary bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50"
                     )}
                   >
-                    <span className={cn("text-xs font-medium", isToday && "grid h-5 w-5 place-items-center rounded-full bg-brand text-brand-foreground")}>
+                    <span className={cn("text-xs font-medium", isToday && "grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground")}>
                       {d.getDate()}
                     </span>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {dayItems.slice(0, 3).map((it) => (
-                        <span
-                          key={it.id}
-                          className={cn("h-1.5 w-1.5 rounded-full", it.completed ? "bg-muted-foreground/30" : "bg-brand")}
-                          title={it.content}
-                        />
+                        <span key={it.id} className={cn("h-1.5 w-1.5 rounded-full", it.completed ? "bg-muted-foreground/30" : "bg-primary")} title={it.content} />
                       ))}
                       {dayItems.length > 3 && <span className="text-[9px] text-muted-foreground">+{dayItems.length - 3}</span>}
                     </div>
@@ -337,15 +456,12 @@ export default function CalendarPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <h3 className="font-display text-lg font-semibold">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="font-heading text-lg font-semibold">
               {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
             </h3>
             <p className="text-xs text-muted-foreground mb-3">{selItems.length} item{selItems.length !== 1 ? "s" : ""}</p>
-            <button
-              onClick={() => setView("day")}
-              className="mb-3 text-xs text-brand hover:underline"
-            >
+            <button type="button" onClick={() => setView("day")} className="mb-3 text-xs text-primary hover:underline min-h-[44px]">
               Open day grid →
             </button>
             {selItems.length ? (
@@ -354,13 +470,13 @@ export default function CalendarPage() {
                   const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
                   const Icon = TI.icon;
                   return (
-                    <button key={it.id} onClick={() => setActive(it)} className="w-full text-left rounded-lg border border-border px-3 py-2 hover:shadow-sm transition">
+                    <button key={it.id} type="button" onClick={() => setActive(it)} className="w-full text-left rounded-[6px] border border-border px-3 py-2.5 hover:shadow-sm transition min-h-[44px]">
                       <div className="flex items-center gap-2">
                         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        {it.time && <span className="text-xs font-medium text-brand">{formatTime(it.time)}</span>}
+                        {it.time && <span className="text-xs font-medium text-primary">{formatTime(it.time)}</span>}
                         <span className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-60")}>{it.content}</span>
                       </div>
-                      {it.person_name && <p className="text-[11px] text-muted-foreground mt-0.5">{it.person_name}</p>}
+                      {it.responsible_name && <p className="text-[11px] text-muted-foreground mt-0.5">{it.responsible_name}</p>}
                       {it.recurring && (
                         <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
                           <Repeat className="h-3 w-3" /> {it.recurring}
@@ -377,7 +493,64 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {scheduleTarget && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-lg space-y-3">
+            <h3 className="font-heading font-semibold">Schedule</h3>
+            <p className="text-sm text-muted-foreground truncate">{scheduleTarget.content}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">Date</label>
+                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Time</label>
+                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setScheduleTarget(null)}>Cancel</Button>
+              <Button onClick={() => persistSchedule(scheduleTarget, scheduleTime, scheduleDate)}>
+                <Clock className="h-4 w-4 mr-1" /> Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+    </div>
+  );
+}
+
+function UnscheduledList({ items, onOpen, onSchedule, compact }) {
+  if (!items?.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+        Nothing waiting to be scheduled.
+      </div>
+    );
+  }
+  return (
+    <div className={cn("space-y-2", compact && "mt-2")}>
+      {!compact && <h3 className="font-heading text-sm font-semibold mb-2">Unscheduled</h3>}
+      {items.map((it) => {
+        const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+        return (
+          <div key={it.id} className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2">
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpen(it)}>
+              <p className="text-sm font-medium truncate">{it.content}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {TI.label}
+                {it.due_date ? ` · due ${formatDate(it.due_date)}` : ""}
+              </p>
+            </button>
+            <Button type="button" size="sm" variant="outline" onClick={() => onSchedule(it)} className="shrink-0">
+              Schedule
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }

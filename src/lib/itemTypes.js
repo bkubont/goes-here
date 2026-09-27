@@ -3,20 +3,48 @@ import {
   Lightbulb, StickyNote, Search, Car, Gift, FolderKanban, Home, Package
 } from "lucide-react";
 
+/** Neutral type chips — status/attention use gold & labeled status, not rainbow. */
+const TONE = "bg-muted text-muted-foreground border-border";
+
 export const ITEM_TYPES = [
-  { key: "todo", label: "To Do", icon: CheckSquare, tone: "bg-blue-50 text-blue-700 border-blue-200" },
-  { key: "grocery", label: "Grocery", icon: ShoppingCart, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  { key: "shopping", label: "Shopping", icon: Package, tone: "bg-amber-50 text-amber-700 border-amber-200" },
-  { key: "bill", label: "Bill", icon: Receipt, tone: "bg-rose-50 text-rose-700 border-rose-200" },
-  { key: "event", label: "Event", icon: CalendarDays, tone: "bg-violet-50 text-violet-700 border-violet-200" },
-  { key: "to_schedule", label: "To Schedule", icon: CalendarClock, tone: "bg-orange-50 text-orange-700 border-orange-200" },
-  { key: "idea", label: "Idea", icon: Lightbulb, tone: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  { key: "note", label: "Note", icon: StickyNote, tone: "bg-slate-50 text-slate-700 border-slate-200" },
-  { key: "research", label: "Research", icon: Search, tone: "bg-cyan-50 text-cyan-700 border-cyan-200" },
-  { key: "errand", label: "Errand", icon: Car, tone: "bg-teal-50 text-teal-700 border-teal-200" },
-  { key: "gift", label: "Gift", icon: Gift, tone: "bg-pink-50 text-pink-700 border-pink-200" },
-  { key: "project_item", label: "Project", icon: FolderKanban, tone: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  { key: "household", label: "Household", icon: Home, tone: "bg-lime-50 text-lime-700 border-lime-200" },
+  { key: "todo", label: "To Do", plural: "To Dos", icon: CheckSquare, tone: TONE },
+  { key: "grocery", label: "Grocery", plural: "Groceries", icon: ShoppingCart, tone: TONE },
+  { key: "shopping", label: "Shopping", plural: "Shopping", icon: Package, tone: TONE },
+  { key: "bill", label: "Bill", plural: "Bills", icon: Receipt, tone: TONE },
+  { key: "event", label: "Event", plural: "Events", icon: CalendarDays, tone: TONE },
+  { key: "to_schedule", label: "To Schedule", plural: "To Schedule", icon: CalendarClock, tone: TONE },
+  { key: "idea", label: "Idea", plural: "Ideas", icon: Lightbulb, tone: TONE },
+  { key: "note", label: "Note", plural: "Notes", icon: StickyNote, tone: TONE },
+  { key: "research", label: "Research", plural: "Research", icon: Search, tone: TONE },
+  { key: "errand", label: "Errand", plural: "Errands", icon: Car, tone: TONE },
+  { key: "gift", label: "Gift", plural: "Gifts", icon: Gift, tone: TONE },
+  { key: "project_item", label: "Project item", plural: "Project items", icon: FolderKanban, tone: TONE },
+  { key: "household", label: "Household", plural: "Household", icon: Home, tone: TONE },
+];
+
+/** Default pinned list shortcuts on Home (not all 13 empty types). */
+export const PINNED_LIST_KEYS = ["todo", "grocery", "bill", "errand", "event", "shopping"];
+
+export const STATUS_LABELS = {
+  backlog: "Backlog",
+  ready: "Ready",
+  doing: "Doing",
+  done: "Done",
+  unpaid: "Unpaid",
+  paid: "Paid",
+  needs_review: "Needs review",
+  overdue: "Overdue",
+  unscheduled: "Unscheduled",
+};
+
+export const RECURRING_PRESETS = [
+  { value: "", label: "Does not repeat" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "every weekday", label: "Every weekday" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
 ];
 
 export const ITEM_TYPE_MAP = Object.fromEntries(ITEM_TYPES.map((t) => [t.key, t]));

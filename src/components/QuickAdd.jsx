@@ -1,14 +1,15 @@
 import React from "react";
-import { Mic, Loader2, Sparkles } from "lucide-react";
+import { Mic, Loader2, Plus } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/components/ui/use-toast";
 import { entities } from "@/api/entities";
 import { parseQuickAdd } from "@/lib/quickAdd";
-import { ITEM_TYPE_MAP } from "@/lib/itemTypes";
+import { ITEM_TYPE_MAP, formatDate } from "@/lib/itemTypes";
 import { usePeople, useProjects, useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { applyDurationEstimate } from "@/lib/estimateDuration";
 
@@ -19,7 +20,6 @@ function toDateISO(dateStr, timeStr) {
   return Number.isNaN(d.getTime()) ? new Date(`${dateStr}T00:00:00`).toISOString() : d.toISOString();
 }
 
-// Drop malformed AI output so one bad value doesn't fail the whole save.
 const isoDay = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(s || "") ? s : "");
 const hhmm = (s) => (/^\d{2}:\d{2}$/.test(s || "") ? s : "");
 
@@ -49,6 +49,7 @@ function normalizeParsed(parsed, fallbackText) {
     _ai_duration: p.duration_minutes != null && Number(p.duration_minutes) > 0
       ? Math.round(Number(p.duration_minutes))
       : null,
+    _ambiguous: !!(p.ambiguous || p.needs_confirm),
   }));
   return cleaned.length
     ? cleaned
@@ -96,6 +97,29 @@ function toRecords(drafts, allItems) {
   });
 }
 
+function destinationLabel(draft) {
+  const TI = ITEM_TYPE_MAP[draft.type] || ITEM_TYPE_MAP.todo;
+  const parts = [TI.plural || TI.label];
+  if (draft.date) parts.push(formatDate(draft.date) + (draft.time ? ` ${draft.time}` : ""));
+  else if (draft.inbox || draft.type === "to_schedule") parts.push("Inbox");
+  if (draft.responsible_name) parts.push(`→ ${draft.responsible_name}`);
+  return `${draft.content}: ${parts.join(" · ")}`;
+}
+
+function looksAmbiguous(drafts, peopleNames) {
+  return drafts.some((d) => {
+    if (d._ambiguous) return true;
+    // Person name mentioned but not matched to a known person when multiple people exist
+    if (d.person_name && peopleNames.length > 1 && !peopleNames.includes(d.person_name)) return true;
+    if (d.responsible_name && peopleNames.length > 1 && !peopleNames.includes(d.responsible_name)) return true;
+    // Date-ish language without a resolved date, and marked inbox
+    if (d.inbox && !d.date && !d.due_date && /\b(next|this|tomorrow|monday|friday|weekend)\b/i.test(d.content || "")) {
+      return true;
+    }
+    return false;
+  });
+}
+
 export default function QuickAdd({ open, onOpenChange }) {
   const { toast } = useToast();
   const { data: people } = usePeople();
@@ -104,8 +128,10 @@ export default function QuickAdd({ open, onOpenChange }) {
   const [text, setText] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [listening, setListening] = React.useState(false);
+  const [confirmDrafts, setConfirmDrafts] = React.useState(null);
   const recRef = React.useRef(null);
   const flightRef = React.useRef({ cancelled: false });
+  const lastCreatedRef = React.useRef([]);
 
   const peopleNames = (people || []).map((p) => p.name);
   const projectNames = (projects || []).map((p) => p.name);
@@ -113,6 +139,7 @@ export default function QuickAdd({ open, onOpenChange }) {
   function reset() {
     setText("");
     setLoading(false);
+    setConfirmDrafts(null);
     flightRef.current = { cancelled: false };
   }
 
@@ -126,6 +153,42 @@ export default function QuickAdd({ open, onOpenChange }) {
     setLoading(false);
   }
 
+  async function undoLast() {
+    const ids = lastCreatedRef.current || [];
+    if (!ids.length) return;
+    try {
+      await Promise.all(ids.map((id) => entities.Item.delete(id)));
+      patchItemsCaches((list) => list.filter((i) => !ids.includes(i.id)));
+      await invalidateAll();
+      lastCreatedRef.current = [];
+      toast({ title: "Undone", description: "Removed the items you just added." });
+    } catch (e) {
+      toast({ title: "Couldn't undo", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function commit(drafts) {
+    const records = toRecords(drafts, allItems || []);
+    const created = await entities.Item.bulkCreate(records);
+    if (Array.isArray(created) && created.length) {
+      patchItemsCaches((list) => [...created, ...list]);
+      lastCreatedRef.current = created.map((r) => r.id).filter(Boolean);
+    }
+    await invalidateAll();
+    const where = drafts.slice(0, 4).map(destinationLabel).join("\n");
+    const extra = drafts.length > 4 ? `\n+${drafts.length - 4} more` : "";
+    toast({
+      title: `Added ${records.length} item${records.length > 1 ? "s" : ""}`,
+      description: where + extra,
+      action: (
+        <ToastAction altText="Undo" onClick={undoLast}>
+          Undo
+        </ToastAction>
+      ),
+    });
+    close();
+  }
+
   async function submit() {
     if (!text.trim() || loading) return;
     const flight = { cancelled: false };
@@ -135,18 +198,12 @@ export default function QuickAdd({ open, onOpenChange }) {
       const parsed = await parseQuickAdd(text, peopleNames, projectNames);
       if (flight.cancelled) return;
       const drafts = normalizeParsed(parsed, text);
-      const records = toRecords(drafts, allItems || []);
-      const created = await entities.Item.bulkCreate(records);
-      if (flight.cancelled) return;
-      if (Array.isArray(created) && created.length) {
-        patchItemsCaches((list) => [...created, ...list]);
+      if (looksAmbiguous(drafts, peopleNames)) {
+        setConfirmDrafts(drafts);
+        setLoading(false);
+        return;
       }
-      await invalidateAll();
-      toast({
-        title: `Added ${records.length} item${records.length > 1 ? "s" : ""}`,
-        description: "Edit anytime from lists or calendar.",
-      });
-      close();
+      await commit(drafts);
     } catch (e) {
       if (flight.cancelled) return;
       toast({ title: "Couldn't add that", description: e.message, variant: "destructive" });
@@ -176,64 +233,98 @@ export default function QuickAdd({ open, onOpenChange }) {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && loading) {
-          cancelInFlight();
-        }
+        if (!next && loading) cancelInFlight();
         onOpenChange(next);
         if (!next) setTimeout(reset, 200);
       }}
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-display text-xl">
-            <Sparkles className="h-5 w-5 text-brand" /> Quick Add
+          <DialogTitle className="flex items-center gap-2 font-heading text-xl">
+            <Plus className="h-5 w-5 text-primary" /> Quick Add
           </DialogTitle>
           <DialogDescription>
-            Type or say anything and press Enter — items are saved where they belong. Edit details later.
+            Type or say anything and press Enter — items are saved where they belong.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="relative">
-            <Textarea
-              autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="e.g. Riley has baseball practice Thursday at 4pm, buy milk, and remind me to pay the electric bill Friday"
-              rows={3}
-              disabled={loading}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={startVoice}
-              disabled={loading}
-              title="Voice input"
-              className={`absolute right-2.5 bottom-2.5 grid h-8 w-8 place-items-center rounded-lg transition ${listening ? "bg-brand text-brand-foreground" : "bg-muted text-muted-foreground hover:bg-accent"}`}
-            >
-              <Mic className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button onClick={submit} disabled={loading || !text.trim()} className="flex-1">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              {loading ? "Adding…" : "Add"}
-            </Button>
-            {loading ? (
-              <Button type="button" variant="ghost" onClick={cancelInFlight}>
-                Cancel
+        {confirmDrafts ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              A few details look unclear. Confirm where these should go, or edit after save.
+            </p>
+            <ul className="space-y-2 max-h-56 overflow-y-auto scrollbar-thin">
+              {confirmDrafts.map((d, i) => (
+                <li key={i} className="rounded-xl border border-border bg-card px-3 py-2 text-sm">
+                  <p className="font-medium">{d.content}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{destinationLabel(d)}</p>
+                </li>
+              ))}
+            </ul>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="outline" onClick={() => setConfirmDrafts(null)}>Back</Button>
+              <Button
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    await commit(confirmDrafts);
+                  } catch (e) {
+                    toast({ title: "Couldn't add that", description: e.message, variant: "destructive" });
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Confirm &amp; add
               </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground hidden sm:inline">Enter</span>
-            )}
+            </DialogFooter>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="relative">
+              <Textarea
+                autoFocus
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="e.g. Riley has baseball practice Thursday at 4pm, buy milk, and remind me to pay the electric bill Friday"
+                rows={3}
+                disabled={loading}
+                className="rounded-[6px]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={startVoice}
+                disabled={loading}
+                title="Voice input"
+                className={`absolute right-2.5 bottom-2.5 grid h-10 w-10 place-items-center rounded-[6px] transition ${listening ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"}`}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={submit} disabled={loading || !text.trim()} className="flex-1 min-h-[44px]">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                {loading ? "Adding…" : "Add"}
+              </Button>
+              {loading ? (
+                <Button type="button" variant="ghost" onClick={cancelInFlight} className="min-h-[44px]">
+                  Cancel
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground hidden sm:inline">Enter</span>
+              )}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
