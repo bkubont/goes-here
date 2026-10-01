@@ -17,6 +17,7 @@ import {
 } from "@/lib/birthdays";
 import { COLOR_PALETTE, normalizeToPalette } from "@/lib/colorPalette";
 import ColorPicker from "@/components/ColorPicker";
+import { isOverdue } from "@/lib/itemTypes";
 
 function birthdayInputValue(value) {
   if (!value) return "";
@@ -182,14 +183,7 @@ export default function People() {
       start.setHours(0, 0, 0, 0);
       return Math.round((nextBday - start) / (24 * 60 * 60 * 1000));
     })();
-    const overdueAssigned = responsible.filter((i) => {
-      if (!i.due_date && !i.date) return false;
-      const d = new Date(i.due_date || i.date);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      d.setHours(0, 0, 0, 0);
-      return d < now;
-    });
+    const overdueAssigned = responsible.filter((i) => isOverdue(i.due_date || i.date));
 
     function openGiftDraft() {
       setGiftDraft({
