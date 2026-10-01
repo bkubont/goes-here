@@ -1,18 +1,27 @@
-import { entities } from "@/api/entities";
+import {
+  listAllItems,
+  listAllDeletedItems,
+  listAllPeople,
+  listAllProjects,
+  listAllBoards,
+  listAllBoardColumns,
+  listAllBoardSwimlanes,
+} from "@/lib/fetchAll";
 
 /**
  * Build a household JSON snapshot for download.
  * Family-member only (caller must already be authenticated as a member).
+ * Each list is paged at DB_PAGE_SIZE until a short page comes back.
  */
 export async function buildHouseholdExport({ includeTrash = false } = {}) {
   const [items, people, projects, boards, columns, swimlanes, trash] = await Promise.all([
-    entities.Item.list("-created_date", 5000),
-    entities.Person.list("name", 500),
-    entities.Project.list("name", 500),
-    entities.Board.list("position", 200),
-    entities.BoardColumn.list("position", 500),
-    entities.BoardSwimlane.list("position", 500),
-    includeTrash ? entities.Item.listDeleted("-deleted_at", 2000) : Promise.resolve([]),
+    listAllItems(),
+    listAllPeople(),
+    listAllProjects(),
+    listAllBoards(),
+    listAllBoardColumns(),
+    listAllBoardSwimlanes(),
+    includeTrash ? listAllDeletedItems() : Promise.resolve([]),
   ]);
 
   return {

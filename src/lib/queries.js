@@ -1,9 +1,12 @@
+import { useEffect } from "react";
 import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { entities } from "@/api/entities";
 import { queryClientInstance } from "@/lib/query-client";
+import { listAllDeletedItems } from "@/lib/fetchAll";
+import { DB_PAGE_SIZE, MAX_PAGES, chunkRows, nextPageOffset } from "@/lib/paging";
 
-/** Default page size for item fetches — raised so large households don't silently miss rows. */
-export const ITEMS_PAGE_SIZE = 2000;
+/** One page of items. Matches Supabase's default Max rows (1,000), never above it. */
+export const ITEMS_PAGE_SIZE = DB_PAGE_SIZE;
 
 function stableFilterKey(filter) {
   if (!filter || typeof filter !== "object") return null;
@@ -27,8 +30,9 @@ function applyItemsRecipe(data, recipe) {
   if (Array.isArray(data)) return recipe(data);
   if (data && Array.isArray(data.pages)) {
     const next = recipe(flattenItemsPages(data));
-    // Collapse to one page after optimistic patch; invalidateAll refetches cleanly.
-    return { ...data, pages: [next], pageParams: [0] };
+    // Keep real page boundaries so a later refetch does not drop every page but the first.
+    const { pages, pageParams } = chunkRows(next, DB_PAGE_SIZE);
+    return { ...data, pages, pageParams };
   }
   return data;
 }
@@ -98,31 +102,54 @@ export async function invalidateAll() {
 }
 
 /**
- * Family items with a higher default page size and optional Load more.
+ * Family items, walked in pages of ITEMS_PAGE_SIZE.
  * `data` is always a flat array (compatible with existing callers).
- * When the last page is full, `hasMore` is true and `loadMore` fetches the next range.
+ * A full page means there may be more: the next page is fetched automatically,
+ * and Load more calls the same fetch if that walk has not finished.
  */
 export function useItems(filter = {}, options = {}) {
-  const { pageSize = ITEMS_PAGE_SIZE, ...queryOptions } = options;
+  const { pageSize: requestedPageSize = ITEMS_PAGE_SIZE, ...queryOptions } = options;
+  const pageSize = Math.min(
+    DB_PAGE_SIZE,
+    Math.max(1, Math.floor(Number(requestedPageSize) || ITEMS_PAGE_SIZE))
+  );
   const stable = stableFilterKey(filter);
   const queryKey = stable ? ["items", stable] : ["items"];
 
   const query = useInfiniteQuery({
     queryKey,
+    // Prefer freshness after local writes; invalidateAll still forces refetch.
+    staleTime: 0,
+    ...queryOptions,
+    initialPageParam: 0,
     queryFn: async ({ pageParam = 0 }) => {
       const opts = { offset: pageParam };
       if (!stable) return entities.Item.list("-created_date", pageSize, opts);
       return entities.Item.filter(stable, "-created_date", pageSize, opts);
     },
-    initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage || lastPage.length < pageSize) return undefined;
-      return allPages.reduce((n, p) => n + (p?.length || 0), 0);
+      const loaded = (allPages || []).reduce((n, p) => n + (p?.length || 0), 0);
+      const previous = loaded - (lastPage?.length || 0);
+      return nextPageOffset(lastPage, previous, pageSize);
     },
-    // Prefer freshness after local writes; invalidateAll still forces refetch.
-    staleTime: 0,
-    ...queryOptions,
   });
+
+  const pageCount = query.data?.pages?.length || 0;
+  useEffect(() => {
+    // Stop the automatic walk at MAX_PAGES. Load more still works past that.
+    if (pageCount >= MAX_PAGES) return;
+    if (!query.hasNextPage || query.isFetching || query.isFetchingNextPage || query.isFetchNextPageError) {
+      return;
+    }
+    query.fetchNextPage();
+  }, [
+    pageCount,
+    query.hasNextPage,
+    query.isFetching,
+    query.isFetchingNextPage,
+    query.isFetchNextPageError,
+    query.fetchNextPage,
+  ]);
 
   const items = flattenItemsPages(query.data);
   return {
@@ -136,11 +163,11 @@ export function useItems(filter = {}, options = {}) {
   };
 }
 
-/** Soft-deleted items (Settings trash). */
+/** Soft-deleted items (Settings trash). Walks every page, not a single capped request. */
 export function useDeletedItems(options = {}) {
   return useQuery({
     queryKey: ["items-trash"],
-    queryFn: async () => entities.Item.listDeleted("-deleted_at", 200),
+    queryFn: () => listAllDeletedItems(),
     staleTime: 0,
     ...options,
   });
