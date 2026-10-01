@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Plus, Loader2, Pencil, Gift } from "lucide-react";
 import { usePeople, useItems, invalidateAll, patchPeopleCaches, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
+import { listAllItems } from "@/lib/fetchAll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,8 +25,10 @@ function birthdayInputValue(value) {
   return "";
 }
 
-async function cascadePersonRename(oldName, newName, items) {
+async function cascadePersonRename(oldName, newName) {
   if (!oldName || !newName || oldName === newName) return 0;
+  // Walk every page. The items already on screen can be a partial first page.
+  const items = await listAllItems();
   const matches = (items || []).filter(
     (i) => i.person_name === oldName || i.responsible_name === oldName
   );
@@ -148,7 +151,7 @@ export default function People() {
         );
       }
       if (oldName !== nextName) {
-        await cascadePersonRename(oldName, nextName, allItems);
+        await cascadePersonRename(oldName, nextName);
         patchItemsCaches((items) =>
           items.map((it) => {
             const next = { ...it };

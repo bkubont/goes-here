@@ -19,7 +19,9 @@ export default function ItemsLoadMoreBanner({
       <p className="text-xs text-muted-foreground">
         Showing {count.toLocaleString()} items
         {pageSize ? ` (batches of ${pageSize.toLocaleString()})` : ""}.
-        Load more if something seems missing.
+        {isLoadingMore
+          ? " Loading the next batch…"
+          : " More are still on the server."}
       </p>
       <Button
         type="button"

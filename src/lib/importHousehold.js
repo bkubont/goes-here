@@ -1,4 +1,13 @@
 import { entities } from "@/api/entities";
+import {
+  listAllItems,
+  listAllDeletedItems,
+  listAllPeople,
+  listAllProjects,
+  listAllBoards,
+  listAllBoardColumns,
+  listAllBoardSwimlanes,
+} from "@/lib/fetchAll";
 
 const ITEM_FIELDS = [
   "content", "type", "person_name", "responsible_name", "project_name",
@@ -173,13 +182,13 @@ export async function importHouseholdData(data, { includeTrash = false } = {}) {
     existingSwimlanes,
     existingTrash,
   ] = await Promise.all([
-    entities.Item.list("-created_date", 5000),
-    entities.Person.list("name", 500),
-    entities.Project.list("name", 500),
-    entities.Board.list("position", 200),
-    entities.BoardColumn.list("position", 500),
-    entities.BoardSwimlane.list("position", 500),
-    includeTrash ? entities.Item.listDeleted("-deleted_at", 2000) : Promise.resolve([]),
+    listAllItems(),
+    listAllPeople(),
+    listAllProjects(),
+    listAllBoards(),
+    listAllBoardColumns(),
+    listAllBoardSwimlanes(),
+    includeTrash ? listAllDeletedItems() : Promise.resolve([]),
   ]);
 
   const itemIds = new Set([
