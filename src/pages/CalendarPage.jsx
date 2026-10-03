@@ -236,6 +236,27 @@ export default function CalendarPage() {
     return days;
   }, [selected, byDay, myDayOnly, meName, personFilter]);
 
+  function applyPersonFilter(next) {
+    setPersonFilter(next);
+    // My Day takes precedence in agenda/day lists — clear it so person chips win.
+    if (next !== "all") setMyDayOnly(false);
+  }
+
+  function toggleMyDayOnly() {
+    if (!meName) {
+      toast({
+        title: "Pick “This device is” first",
+        description: "Settings → This device is — choose your person name.",
+      });
+      return;
+    }
+    setMyDayOnly((prev) => {
+      const on = !prev;
+      if (on) setPersonFilter("all");
+      return on;
+    });
+  }
+
   function setView(v) {
     // Keep personFilter across Day/Week/Month/Agenda so kitchen wall filters stick.
     const next = new URLSearchParams(searchParams);
@@ -366,16 +387,7 @@ export default function CalendarPage() {
           {(view === "day" || view === "agenda") && (
             <button
               type="button"
-              onClick={() => {
-                if (!meName) {
-                  toast({
-                    title: "Pick “This device is” first",
-                    description: "Settings → This device is — choose your person name.",
-                  });
-                  return;
-                }
-                setMyDayOnly((v) => !v);
-              }}
+              onClick={toggleMyDayOnly}
               className={cn(
                 "inline-flex min-h-[40px] items-center rounded-[6px] border px-2.5 text-xs font-medium transition",
                 myDayOnly && meName
@@ -496,7 +508,7 @@ export default function CalendarPage() {
           <PersonFilterBar
             people={filterPeople}
             personFilter={personFilter}
-            onChange={setPersonFilter}
+            onChange={applyPersonFilter}
           />
           {agendaDays.map(({ date, key, items: dayItems }) => (
             <section key={key}>
@@ -555,7 +567,7 @@ export default function CalendarPage() {
             <PersonFilterBar
               people={filterPeople}
               personFilter={personFilter}
-              onChange={setPersonFilter}
+              onChange={applyPersonFilter}
             />
             <WeekView
               days={weekDayList}
@@ -636,7 +648,7 @@ export default function CalendarPage() {
               <PersonFilterBar
                 people={filterPeople}
                 personFilter={personFilter}
-                onChange={setPersonFilter}
+                onChange={applyPersonFilter}
               />
 
               <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
@@ -680,7 +692,7 @@ export default function CalendarPage() {
           <PersonFilterBar
             people={filterPeople}
             personFilter={personFilter}
-            onChange={setPersonFilter}
+            onChange={applyPersonFilter}
           />
           <div className="grid lg:grid-cols-[1fr_300px] gap-6">
             <div className="rounded-xl border border-border bg-card p-3 md:p-4">
@@ -705,6 +717,8 @@ export default function CalendarPage() {
                       tabIndex={0}
                       onClick={() => goToDate(d)}
                       onKeyDown={(e) => {
+                        // Nested chip buttons must keep Enter/Space — only handle cell focus.
+                        if (e.target !== e.currentTarget) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           goToDate(d);
