@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { AlertCircle, CalendarClock, ArrowRight, CheckCircle2, Bell } from "lucide-react";
 import { useItems, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
+import { toDayKey } from "@/lib/itemTypes";
 import ItemList from "@/components/ItemList";
 import ItemCard from "@/components/ItemCard";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
@@ -15,6 +16,8 @@ export default function Inbox() {
   const { toast } = useToast();
   const all = items || [];
   const [activeReminder, setActiveReminder] = React.useState(null);
+  const todayKey = toDayKey(new Date());
+  const calendarUnscheduledHref = `/calendar?view=day&date=${todayKey}&tab=unscheduled`;
 
   const needsReview = all.filter((i) => i.inbox && !i.completed);
   const toSchedule = all.filter((i) => i.type === "to_schedule" && !i.completed);
@@ -55,7 +58,7 @@ export default function Inbox() {
           </p>
         </div>
         <Link
-          to="/calendar?tab=unscheduled"
+          to={calendarUnscheduledHref}
           className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary hover:underline"
         >
           Schedule on calendar <ArrowRight className="h-3.5 w-3.5" />

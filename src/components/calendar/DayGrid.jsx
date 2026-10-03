@@ -5,6 +5,7 @@ import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { formatDuration, DEFAULT_BLOCK_MINUTES } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
 import { personAccentStyle, resolvePersonColor } from "@/lib/personColor";
+import { overlappingItemIds, snapDurationMinutes } from "@/lib/calendarConflicts";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export const DAY_START_HOUR = 6;
@@ -68,6 +69,11 @@ export default function DayGrid({
   const dayKey = toDayKey(day);
   const scheduled = (items || []).filter((it) => toDayKey(it.date) === dayKey && it.time);
 
+  const conflictIds = React.useMemo(
+    () => overlappingItemIds(scheduled, (it) => resolveBlockMinutes(it, allItems)),
+    [scheduled, allItems]
+  );
+
   function blockStyle(it) {
     const start = minutesFromMidnight(it.time);
     const dur = resolveBlockMinutes(it, allItems);
@@ -94,11 +100,22 @@ export default function DayGrid({
       if (!r || !dragRef.current) return;
       const mins = snapMinutes(DAY_START_HOUR * 60 + ((ev.clientY - r.top - dragRef.current.offsetY) / HOUR_HEIGHT) * 60);
       const dur = resolveBlockMinutes(it, allItems);
+      const preview = {
+        ...it,
+        id: `__ghost__${it.id}`,
+        time: formatHHMM(mins),
+      };
+      const others = scheduled.filter((s) => s.id !== it.id);
+      const conflict = overlappingItemIds(
+        [...others, preview],
+        (row) => resolveBlockMinutes(row.id === preview.id ? it : row, allItems)
+      ).has(preview.id);
       setGhost({
         top: ((mins - DAY_START_HOUR * 60) / 60) * HOUR_HEIGHT,
         height: Math.max((dur / 60) * HOUR_HEIGHT, 20),
         label: formatHHMM(mins),
         content: it.content,
+        conflict,
       });
     };
     const onUp = (ev) => {
@@ -126,12 +143,19 @@ export default function DayGrid({
       const r = gridRef.current?.getBoundingClientRect();
       if (!r || !dragRef.current) return;
       const endMins = yToMinutes(ev.clientY, r);
-      const dur = Math.max(SNAP_MINUTES, endMins - startMins);
+      const dur = snapDurationMinutes(Math.max(SNAP_MINUTES, endMins - startMins));
+      const preview = { ...it, id: `__ghost__${it.id}`, duration_minutes: dur, duration_source: "manual" };
+      const others = scheduled.filter((s) => s.id !== it.id);
+      const conflict = overlappingItemIds(
+        [...others, { ...preview, time: it.time }],
+        (row) => (row.id === preview.id ? dur : resolveBlockMinutes(row, allItems))
+      ).has(preview.id);
       setGhost({
         top: ((startMins - DAY_START_HOUR * 60) / 60) * HOUR_HEIGHT,
         height: Math.max((dur / 60) * HOUR_HEIGHT, 20),
         label: formatDuration(dur),
         content: it.content,
+        conflict,
       });
     };
     const onUp = (ev) => {
@@ -141,7 +165,7 @@ export default function DayGrid({
       setGhost(null);
       if (r && dragRef.current) {
         const endMins = yToMinutes(ev.clientY, r);
-        const dur = Math.max(SNAP_MINUTES, endMins - startMins);
+        const dur = snapDurationMinutes(Math.max(SNAP_MINUTES, endMins - startMins));
         onResize?.(it, dur);
       }
       dragRef.current = null;
@@ -173,10 +197,30 @@ export default function DayGrid({
   function onDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mins = yToMinutes(e.clientY, rect);
+    const id = e.dataTransfer.types?.includes?.("text/place-item-id")
+      ? null
+      : null;
+    // Live ghost while dragging from pool (HTML5 DnD does not expose id until drop in some browsers).
+    void id;
+    setGhost({
+      top: ((mins - DAY_START_HOUR * 60) / 60) * HOUR_HEIGHT,
+      height: Math.max((DEFAULT_BLOCK_MINUTES / 60) * HOUR_HEIGHT, 20),
+      label: formatHHMM(mins),
+      content: "Drop to schedule",
+      conflict: false,
+    });
+  }
+
+  function onDragLeave(e) {
+    if (!gridRef.current?.contains(e.relatedTarget)) setGhost(null);
   }
 
   function onDrop(e) {
     e.preventDefault();
+    setGhost(null);
     const id = e.dataTransfer.getData("text/place-item-id");
     if (!id) return;
     const rect = gridRef.current?.getBoundingClientRect();
@@ -187,6 +231,7 @@ export default function DayGrid({
   }
 
   const gridHeight = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_HEIGHT;
+  const conflictCount = conflictIds.size;
 
   return (
     <div className="relative overflow-auto rounded-2xl border border-border bg-card max-h-[70vh]">
@@ -195,11 +240,17 @@ export default function DayGrid({
           Tap a time slot to schedule the selected item
         </p>
       )}
+      {conflictCount > 0 && (
+        <p className="sticky top-0 z-20 border-b border-attention/40 bg-attention/10 px-3 py-2 text-xs text-attention-foreground">
+          {conflictCount} block{conflictCount === 1 ? "" : "s"} overlap — adjust times or durations
+        </p>
+      )}
       <div
         ref={gridRef}
         className="relative grid"
         style={{ gridTemplateColumns: "52px 1fr", height: gridHeight }}
         onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={onGridClick}
       >
@@ -216,23 +267,35 @@ export default function DayGrid({
         </div>
         <div className="relative" data-hour-slot="1">
           {HOURS.map((h) => (
-            <div
-              key={h}
-              data-hour-slot="1"
-              className="absolute left-0 right-0 border-t border-border/60"
-              style={{ top: (h - DAY_START_HOUR) * HOUR_HEIGHT, height: HOUR_HEIGHT }}
-            />
+            <React.Fragment key={h}>
+              <div
+                data-hour-slot="1"
+                className="absolute left-0 right-0 border-t border-border/60"
+                style={{ top: (h - DAY_START_HOUR) * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+              />
+              {/* 15-min guide lines for denser snap feedback */}
+              {[1, 2, 3].map((q) => (
+                <div
+                  key={`${h}-${q}`}
+                  data-hour-slot="1"
+                  className="absolute left-0 right-0 border-t border-border/25 pointer-events-none"
+                  style={{ top: (h - DAY_START_HOUR) * HOUR_HEIGHT + (q * HOUR_HEIGHT) / 4 }}
+                />
+              ))}
+            </React.Fragment>
           ))}
           {scheduled.map((it) => {
             const { top, height, duration } = blockStyle(it);
             const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
             const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
+            const conflict = conflictIds.has(it.id);
             return (
               <div
                 key={it.id}
                 className={cn(
                   "absolute left-1 right-2 z-10 overflow-hidden rounded-lg border px-2 py-1 text-left shadow-sm cursor-grab active:cursor-grabbing text-foreground",
                   !accent.borderLeftColor && TI.tone,
+                  conflict && "ring-2 ring-attention border-attention z-20",
                   it.completed && "opacity-50"
                 )}
                 style={{ top, height, ...accent }}
@@ -241,12 +304,21 @@ export default function DayGrid({
                   e.stopPropagation();
                   onOpenItem?.(it);
                 }}
+                title={conflict ? "Overlaps another block" : undefined}
               >
                 <div className="flex items-center gap-1 text-[10px] font-medium opacity-80">
                   <Clock className="h-3 w-3" />
                   {formatTime(it.time)} · {formatDuration(duration)}
+                  {conflict && (
+                    <span className="ml-auto shrink-0 rounded px-1 text-[9px] font-semibold uppercase tracking-wide bg-attention/20 text-attention-foreground">
+                      Overlap
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs font-semibold truncate leading-tight">{it.content}</div>
+                {it.responsible_name && (
+                  <div className="text-[10px] opacity-70 truncate">{it.responsible_name}</div>
+                )}
                 {!isMobile && (
                   <div
                     className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize"
@@ -258,10 +330,17 @@ export default function DayGrid({
           })}
           {ghost && (
             <div
-              className="pointer-events-none absolute left-1 right-2 z-30 rounded-lg border-2 border-dashed border-brand bg-brand/20 px-2 py-1"
+              className={cn(
+                "pointer-events-none absolute left-1 right-2 z-30 rounded-lg border-2 border-dashed px-2 py-1",
+                ghost.conflict
+                  ? "border-attention bg-attention/20"
+                  : "border-brand bg-brand/20"
+              )}
               style={{ top: ghost.top, height: ghost.height }}
             >
-              <div className="text-[10px] font-medium text-brand">{ghost.label}</div>
+              <div className={cn("text-[10px] font-medium", ghost.conflict ? "text-attention-foreground" : "text-brand")}>
+                {ghost.label}{ghost.conflict ? " · overlap" : ""}
+              </div>
               <div className="text-xs font-semibold truncate">{ghost.content}</div>
             </div>
           )}
@@ -320,9 +399,13 @@ export function UnscheduledPool({
                 <span className="text-sm font-medium truncate flex-1">{it.content}</span>
                 <span className="text-[10px] text-muted-foreground shrink-0">{formatDuration(dur) || `${DEFAULT_BLOCK_MINUTES}m`}</span>
               </div>
-              {(it.person_name || it.type === "to_schedule" || it.inbox) && (
+              {(it.responsible_name || it.person_name || it.type === "to_schedule" || it.inbox) && (
                 <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                  {[it.person_name, it.type === "to_schedule" ? "to schedule" : null, it.inbox ? "inbox" : null]
+                  {[
+                    it.responsible_name || it.person_name,
+                    it.type === "to_schedule" ? "to schedule" : null,
+                    it.inbox ? "inbox" : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>

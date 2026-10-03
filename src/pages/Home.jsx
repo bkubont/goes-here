@@ -124,13 +124,18 @@ export default function Home() {
 
   const [recentActive, setRecentActive] = React.useState(null);
 
+  const todayKey = toDayKey(new Date());
+  const calendarDayHref = `/calendar?view=day&date=${todayKey}`;
+  const calendarUnscheduledHref = `/calendar?view=day&date=${todayKey}&tab=unscheduled`;
+  const calendarWeekHref = `/calendar?view=week&date=${todayKey}`;
+
   const attention = [
     overdue.length > 0 && {
       key: "overdue",
       label: "Overdue",
       count: overdue.length,
       hint: "Reschedule or complete",
-      to: "/calendar",
+      to: calendarDayHref,
       icon: AlertCircle,
     },
     unscheduled.length > 0 && {
@@ -138,7 +143,7 @@ export default function Home() {
       label: "Unscheduled",
       count: unscheduled.length,
       hint: "Pick a day and time",
-      to: "/calendar?tab=unscheduled",
+      to: calendarUnscheduledHref,
       icon: CalendarClock,
     },
     needsReview.length > 0 && {
@@ -256,7 +261,7 @@ export default function Home() {
         )}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <Link
-            to="/calendar?view=day"
+            to={calendarDayHref}
             className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
           >
             <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-primary text-primary-foreground">
@@ -440,7 +445,7 @@ export default function Home() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-heading text-base font-semibold">Upcoming</h2>
-          <Link to="/calendar" className="text-sm text-primary flex items-center gap-1 hover:underline min-h-[44px]">
+          <Link to={calendarWeekHref} className="text-sm text-primary flex items-center gap-1 hover:underline min-h-[44px]">
             Calendar <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>

@@ -43,6 +43,31 @@ export function resolveCalendarView(viewParam, { isMobile = false } = {}) {
   return isMobile ? "agenda" : "day";
 }
 
+const DATE_PARAM_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Parse `?date=YYYY-MM-DD` into a local calendar Date, or null if invalid.
+ */
+export function parseCalendarDateParam(value) {
+  if (!value || typeof value !== "string") return null;
+  const m = value.match(DATE_PARAM_RE);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const d = new Date(year, month, day);
+  if (
+    Number.isNaN(d.getTime())
+    || d.getFullYear() !== year
+    || d.getMonth() !== month
+    || d.getDate() !== day
+  ) {
+    return null;
+  }
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 /** Reactive default calendar view preference. */
 export function useDefaultCalendarView() {
   const [view, setView] = useState(loadDefaultCalendarView);
