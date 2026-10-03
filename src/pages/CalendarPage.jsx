@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
 import WeekView, { startOfWeek, endOfWeek, weekDays, matchesPersonFilter } from "@/components/calendar/WeekView";
+import FamilyHubStrip from "@/components/calendar/FamilyHubStrip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/durationDefaults";
@@ -638,6 +639,9 @@ export default function CalendarPage() {
               personFilter={personFilter}
               onChange={applyPersonFilter}
             />
+            {isMobile && (
+              <FamilyHubStrip items={all} todayKey={todayKey} compact />
+            )}
             <WeekView
               days={weekDayList}
               byDay={byDay}
@@ -652,6 +656,7 @@ export default function CalendarPage() {
           </div>
           {!isMobile && (
             <div className="space-y-3">
+              <FamilyHubStrip items={all} todayKey={todayKey} compact className="mb-0" />
               <UnscheduledPool
                 items={poolItems}
                 allItems={all}
@@ -771,6 +776,10 @@ export default function CalendarPage() {
             personFilter={personFilter}
             onChange={applyPersonFilter}
           />
+          {/* Mobile: hubs under filter. Desktop: hubs live in the day sidebar. */}
+          <div className="lg:hidden">
+            <FamilyHubStrip items={all} todayKey={todayKey} compact />
+          </div>
           <div className="grid lg:grid-cols-[1fr_300px] gap-6">
             <div className="rounded-xl border border-border bg-card p-3 md:p-4">
               <div className="grid grid-cols-7 mb-2">
@@ -864,6 +873,9 @@ export default function CalendarPage() {
             </div>
 
             <div className="rounded-xl border border-border bg-card p-4">
+              <div className="hidden lg:block">
+                <FamilyHubStrip items={all} todayKey={todayKey} compact />
+              </div>
               <h3 className="font-heading text-lg font-semibold">
                 {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
               </h3>
