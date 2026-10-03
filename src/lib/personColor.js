@@ -61,3 +61,19 @@ export function personChipDotStyle(color) {
   if (!color) return undefined;
   return { backgroundColor: color };
 }
+
+/**
+ * Compact fill for Month grid event chips (wall glance).
+ * Person color wins; callers fall back to primary tint when null.
+ */
+export function personMonthChipStyle(color) {
+  if (!color) return undefined;
+  const rgb = parseHexColor(color);
+  if (!rgb) return undefined;
+  return {
+    backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
+    borderLeftWidth: "2px",
+    borderLeftStyle: "solid",
+    borderLeftColor: color,
+  };
+}

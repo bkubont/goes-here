@@ -18,12 +18,42 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
 import { parseCalendarDateParam, resolveCalendarView } from "@/lib/calendarView";
-import { personAccentStyle, personBarStyle, personChipDotStyle, resolvePersonColor } from "@/lib/personColor";
+import {
+  personAccentStyle,
+  personBarStyle,
+  personChipDotStyle,
+  personMonthChipStyle,
+  resolvePersonColor,
+} from "@/lib/personColor";
 import { useDevicePerson } from "@/lib/devicePerson";
 
 const POOL_TYPES = new Set([
   "todo", "to_schedule", "event", "errand", "household", "project_item", "research", "gift",
 ]);
+
+/** Max titled chips per month cell before "+N" (Skylight-style wall glance). */
+const MONTH_CHIP_MAX = 3;
+
+/** Compact clock for month chips — e.g. 9a, 3:30p. */
+function compactTime(t) {
+  if (!t) return "";
+  const [h, m] = String(t).split(":");
+  if (!h) return "";
+  const hr = parseInt(h, 10);
+  if (Number.isNaN(hr)) return "";
+  const ampm = hr >= 12 ? "p" : "a";
+  const hr12 = hr % 12 || 12;
+  if (m && m !== "00") return `${hr12}:${m}${ampm}`;
+  return `${hr12}${ampm}`;
+}
+
+function sortedDayItems(list, personFilter) {
+  let items = (list || []).slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  if (personFilter && personFilter !== "all") {
+    items = items.filter((it) => matchesPersonFilter(it, personFilter));
+  }
+  return items;
+}
 
 function hasClockTime(it) {
   return !!(it.time && String(it.time).trim());
@@ -207,10 +237,7 @@ export default function CalendarPage() {
   }, [selected, byDay, myDayOnly, meName, personFilter]);
 
   function setView(v) {
-    // PersonFilterBar only shows on day/week — clear so Month/Agenda aren't silently filtered.
-    if (v !== "day" && v !== "week" && personFilter !== "all") {
-      setPersonFilter("all");
-    }
+    // Keep personFilter across Day/Week/Month/Agenda so kitchen wall filters stick.
     const next = new URLSearchParams(searchParams);
     if (v === "day" && !isMobile) next.delete("view");
     else next.set("view", v);
@@ -302,7 +329,12 @@ export default function CalendarPage() {
   const weekRangeLabel = weekStartsOn === 1 ? "Mon–Sun" : "Sun–Sat";
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+    <div
+      className={cn(
+        "mx-auto px-4 py-6 md:px-8 md:py-8",
+        view === "month" ? "max-w-7xl" : "max-w-6xl"
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="page-title">
@@ -322,6 +354,11 @@ export default function CalendarPage() {
           {view === "week" && (
             <p className="text-xs text-muted-foreground mt-0.5">
               {weekRangeLabel} week · person colors · tap a day to open the day grid
+            </p>
+          )}
+          {view === "month" && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Family wall glance · person colors · tap a day for details
             </p>
           )}
         </div>
@@ -456,6 +493,11 @@ export default function CalendarPage() {
 
       {view === "agenda" && tabParam !== "unscheduled" && (
         <div className="space-y-5">
+          <PersonFilterBar
+            people={filterPeople}
+            personFilter={personFilter}
+            onChange={setPersonFilter}
+          />
           {agendaDays.map(({ date, key, items: dayItems }) => (
             <section key={key}>
               <button
@@ -634,87 +676,156 @@ export default function CalendarPage() {
       )}
 
       {view === "month" && (
-        <div className="grid lg:grid-cols-[1fr_300px] gap-6">
-          <div className="rounded-xl border border-border bg-card p-3">
-            <div className="grid grid-cols-7 mb-2">
-              {dowLabels.map((d) => <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {cells.map((d, i) => {
-                if (!d) return <div key={i} />;
-                const k = toDayKey(d);
-                const dayItems = byDay[k] || [];
-                const isToday = k === todayKey;
-                const isSel = k === selKey;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => goToDate(d, { view: "day" })}
-                    className={cn(
-                      "aspect-square sm:aspect-auto sm:min-h-[64px] rounded-[6px] border p-1.5 text-left transition flex flex-col min-h-[44px]",
-                      isSel ? "border-primary bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50"
-                    )}
-                  >
-                    <span className={cn("text-xs font-medium", isToday && "grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground")}>
-                      {d.getDate()}
-                    </span>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {dayItems.slice(0, 3).map((it) => {
-                        const color = resolvePersonColor(it.responsible_name, people);
-                        return (
-                          <span
-                            key={it.id}
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              it.completed ? "bg-muted-foreground/30" : !color && "bg-primary"
-                            )}
-                            style={!it.completed ? personChipDotStyle(color) : undefined}
-                            title={it.content}
-                          />
-                        );
-                      })}
-                      {dayItems.length > 3 && <span className="text-[9px] text-muted-foreground">+{dayItems.length - 3}</span>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="font-heading text-lg font-semibold">
-              {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-            </h3>
-            <p className="text-xs text-muted-foreground mb-3">{selItems.length} item{selItems.length !== 1 ? "s" : ""}</p>
-            <button type="button" onClick={() => setView("day")} className="mb-3 text-xs text-primary hover:underline min-h-[44px]">
-              Open day grid →
-            </button>
-            {selItems.length ? (
-              <div className="space-y-2">
-                {selItems.map((it) => {
-                  const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
-                  const Icon = TI.icon;
+        <div className="space-y-4">
+          <PersonFilterBar
+            people={filterPeople}
+            personFilter={personFilter}
+            onChange={setPersonFilter}
+          />
+          <div className="grid lg:grid-cols-[1fr_300px] gap-6">
+            <div className="rounded-xl border border-border bg-card p-3 md:p-4">
+              <div className="grid grid-cols-7 mb-2">
+                {dowLabels.map((d) => (
+                  <div key={d} className="text-center text-[11px] font-medium text-muted-foreground py-1">{d}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1 md:gap-1.5">
+                {cells.map((d, i) => {
+                  if (!d) return <div key={i} />;
+                  const k = toDayKey(d);
+                  const dayItems = sortedDayItems(byDay[k], personFilter);
+                  const visible = dayItems.slice(0, MONTH_CHIP_MAX);
+                  const overflow = dayItems.length - visible.length;
+                  const isToday = k === todayKey;
+                  const isSel = k === selKey;
                   return (
-                    <button key={it.id} type="button" onClick={() => setActive(it)} className="w-full text-left rounded-[6px] border border-border px-3 py-2.5 hover:shadow-sm transition min-h-[44px]">
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        {it.time && <span className="text-xs font-medium text-primary">{formatTime(it.time)}</span>}
-                        <span className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-60")}>{it.content}</span>
-                      </div>
-                      {it.responsible_name && <p className="text-[11px] text-muted-foreground mt-0.5">{it.responsible_name}</p>}
-                      {it.recurring && (
-                        <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                          <Repeat className="h-3 w-3" /> {formatRecurrenceSummary(it.recurring, it._originalDate || it.date) || it.recurring}
-                        </p>
+                    <div
+                      key={i}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => goToDate(d)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          goToDate(d);
+                        }
+                      }}
+                      className={cn(
+                        "rounded-[6px] border p-1 md:p-1.5 text-left transition flex flex-col cursor-pointer",
+                        "min-h-[72px] md:min-h-[100px] lg:min-h-[112px]",
+                        isSel ? "border-primary bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50"
                       )}
-                    </button>
+                      aria-label={`${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${dayItems.length ? `, ${dayItems.length} items` : ""}`}
+                      aria-pressed={isSel}
+                    >
+                      <span
+                        className={cn(
+                          "text-xs font-medium leading-none",
+                          isToday && "grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground"
+                        )}
+                      >
+                        {d.getDate()}
+                      </span>
+                      <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
+                        {visible.map((it) => {
+                          const color = resolvePersonColor(it.responsible_name, people);
+                          const chipStyle = personMonthChipStyle(color);
+                          const timeLabel = compactTime(it.time);
+                          return (
+                            <button
+                              key={it.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActive(it);
+                              }}
+                              className={cn(
+                                "w-full min-w-0 rounded-[3px] border border-transparent px-1 py-0.5 text-left leading-tight",
+                                it.completed && "opacity-50",
+                                !chipStyle && "bg-primary/10"
+                              )}
+                              style={chipStyle}
+                              title={[it.content, it.responsible_name, formatTime(it.time)].filter(Boolean).join(" · ")}
+                            >
+                              <span className="flex min-w-0 items-baseline gap-0.5">
+                                {timeLabel && (
+                                  <span className="shrink-0 text-[9px] font-semibold tabular-nums text-foreground/80 md:text-[10px]">
+                                    {timeLabel}
+                                  </span>
+                                )}
+                                <span className="truncate text-[9px] font-medium text-foreground md:text-[10px]">
+                                  {it.content}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {overflow > 0 && (
+                          <span className="px-0.5 text-[9px] font-medium text-muted-foreground md:text-[10px]">
+                            +{overflow}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground py-6 text-center">Nothing scheduled.</p>
-            )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h3 className="font-heading text-lg font-semibold">
+                {selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+              </h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                {selItems.length} item{selItems.length !== 1 ? "s" : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => setView("day")}
+                className="mb-3 text-xs text-primary hover:underline min-h-[44px]"
+              >
+                Open day grid →
+              </button>
+              {selItems.length ? (
+                <div className="space-y-2">
+                  {selItems.map((it) => {
+                    const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
+                    const Icon = TI.icon;
+                    const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
+                    return (
+                      <button
+                        key={it.id}
+                        type="button"
+                        onClick={() => setActive(it)}
+                        className="w-full text-left rounded-[6px] border border-border px-3 py-2.5 hover:shadow-sm transition min-h-[44px]"
+                        style={accent}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          {it.time && (
+                            <span className="text-xs font-medium text-primary shrink-0">{formatTime(it.time)}</span>
+                          )}
+                          <span className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-60")}>
+                            {it.content}
+                          </span>
+                        </div>
+                        {it.responsible_name && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{it.responsible_name}</p>
+                        )}
+                        {it.recurring && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <Repeat className="h-3 w-3" />{" "}
+                            {formatRecurrenceSummary(it.recurring, it._originalDate || it.date) || it.recurring}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-6 text-center">Nothing scheduled.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
