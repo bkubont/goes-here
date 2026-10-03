@@ -8,7 +8,7 @@ import { expandRecurring, exceptionSet, formatRecurrenceSummary } from "@/lib/re
 import { useToast } from "@/components/ui/use-toast";
 import ItemDetailDrawer from "@/components/ItemDetailDrawer";
 import DayGrid, { UnscheduledPool } from "@/components/calendar/DayGrid";
-import WeekView, { startOfWeek, endOfWeek, weekDays } from "@/components/calendar/WeekView";
+import WeekView, { startOfWeek, endOfWeek, weekDays, matchesPersonFilter } from "@/components/calendar/WeekView";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/durationDefaults";
@@ -17,8 +17,8 @@ import { downloadDayIcs } from "@/lib/ics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
-import { resolveCalendarView } from "@/lib/calendarView";
-import { personAccentStyle, personBarStyle, resolvePersonColor } from "@/lib/personColor";
+import { parseCalendarDateParam, resolveCalendarView } from "@/lib/calendarView";
+import { personAccentStyle, personBarStyle, personChipDotStyle, resolvePersonColor } from "@/lib/personColor";
 import { useDevicePerson } from "@/lib/devicePerson";
 
 const POOL_TYPES = new Set([
@@ -57,22 +57,55 @@ export default function CalendarPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
   const tabParam = searchParams.get("tab");
+  const dateParam = searchParams.get("date");
+  const dateFromUrl = React.useMemo(() => parseCalendarDateParam(dateParam), [dateParam]);
   // URL ?view= wins; otherwise Settings default; else agenda (mobile) / day (desktop).
   const view = resolveCalendarView(viewParam, { isMobile });
   const showUnscheduled = tabParam === "unscheduled" || (!isMobile && view === "day");
 
   const [cursor, setCursor] = React.useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
+    const seed = dateFromUrl || new Date();
+    return new Date(seed.getFullYear(), seed.getMonth(), 1);
   });
-  const [selected, setSelected] = React.useState(() => new Date());
+  const [selected, setSelected] = React.useState(() => dateFromUrl || new Date());
   const [active, setActive] = React.useState(null);
   const [poolSelected, setPoolSelected] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
+  const [personFilter, setPersonFilter] = React.useState("all");
   const [myDayOnly, setMyDayOnly] = React.useState(false);
   const [scheduleTarget, setScheduleTarget] = React.useState(null);
   const [scheduleTime, setScheduleTime] = React.useState("09:00");
-  const [scheduleDate, setScheduleDate] = React.useState(() => toDayKey(new Date()));
+  const [scheduleDate, setScheduleDate] = React.useState(() => toDayKey(dateFromUrl || new Date()));
+
+  // Deep link: ?date=YYYY-MM-DD wins when the URL changes.
+  React.useEffect(() => {
+    if (!dateFromUrl) return;
+    const nextKey = toDayKey(dateFromUrl);
+    if (nextKey === toDayKey(selected)) return;
+    setSelected(dateFromUrl);
+    setCursor(new Date(dateFromUrl.getFullYear(), dateFromUrl.getMonth(), 1));
+  }, [dateParam]); // eslint-disable-line react-hooks/exhaustive-deps -- sync from URL only
+
+  function writeDateParam(d, extra) {
+    const next = new URLSearchParams(searchParams);
+    const key = toDayKey(d);
+    if (key) next.set("date", key);
+    if (extra) {
+      Object.entries(extra).forEach(([k, v]) => {
+        if (v == null || v === "") next.delete(k);
+        else next.set(k, v);
+      });
+    }
+    setSearchParams(next, { replace: true });
+  }
+
+  function goToDate(d, extra) {
+    const next = new Date(d);
+    next.setHours(0, 0, 0, 0);
+    setSelected(next);
+    setCursor(new Date(next.getFullYear(), next.getMonth(), 1));
+    writeDateParam(next, extra);
+  }
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -116,10 +149,15 @@ export default function CalendarPage() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
   const selKey = toDayKey(selected);
-  const selItemsRaw = (byDay[selKey] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
-  const selItems = myDayOnly && meName
-    ? selItemsRaw.filter((it) => it.responsible_name === meName)
-    : selItemsRaw;
+  const selItems = React.useMemo(() => {
+    let list = (byDay[selKey] || []).slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+    if (myDayOnly && meName) {
+      list = list.filter((it) => it.responsible_name === meName);
+    } else if (personFilter !== "all") {
+      list = list.filter((it) => matchesPersonFilter(it, personFilter));
+    }
+    return list;
+  }, [byDay, selKey, myDayOnly, meName, personFilter]);
 
   const poolItems = React.useMemo(() => {
     return all.filter((it) => isPoolCandidate(it, selKey));
@@ -127,9 +165,17 @@ export default function CalendarPage() {
 
   const responsibleNames = React.useMemo(() => {
     const set = new Set();
+    people.forEach((p) => { if (p?.name) set.add(p.name); });
     all.forEach((it) => { if (it.responsible_name) set.add(it.responsible_name); });
     return [...set].sort();
-  }, [all]);
+  }, [all, people]);
+
+  const filterPeople = React.useMemo(() => {
+    return responsibleNames.map((name) => ({
+      name,
+      color: resolvePersonColor(name, people),
+    }));
+  }, [responsibleNames, people]);
 
   const dayForWorkload = selItems.filter((it) => !it.completed && it.time);
   const workload = React.useMemo(() => {
@@ -152,11 +198,13 @@ export default function CalendarPage() {
       let dayItems = (byDay[k] || []).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
       if (myDayOnly && meName) {
         dayItems = dayItems.filter((it) => it.responsible_name === meName);
+      } else if (personFilter !== "all") {
+        dayItems = dayItems.filter((it) => matchesPersonFilter(it, personFilter));
       }
       days.push({ date: d, key: k, items: dayItems });
     }
     return days;
-  }, [selected, byDay, myDayOnly, meName]);
+  }, [selected, byDay, myDayOnly, meName, personFilter]);
 
   function setView(v) {
     const next = new URLSearchParams(searchParams);
@@ -164,6 +212,8 @@ export default function CalendarPage() {
     else next.set("view", v);
     // Keep Unscheduled tab only on day / week / agenda (mobile Schedule|Unscheduled).
     if (v !== "day" && v !== "week" && v !== "agenda") next.delete("tab");
+    const key = toDayKey(selected);
+    if (key) next.set("date", key);
     setSearchParams(next, { replace: true });
   }
 
@@ -236,8 +286,7 @@ export default function CalendarPage() {
   function shiftDay(delta) {
     const d = new Date(selected);
     d.setDate(d.getDate() + delta);
-    setSelected(d);
-    setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+    goToDate(d);
   }
 
   function openSchedule(it) {
@@ -245,6 +294,8 @@ export default function CalendarPage() {
     setScheduleTime(it.time || "09:00");
     setScheduleDate(toDayKey(it.date) || toDayKey(selected) || todayKey);
   }
+
+  const weekRangeLabel = weekStartsOn === 1 ? "Mon–Sun" : "Sun–Sat";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
@@ -266,7 +317,7 @@ export default function CalendarPage() {
           )}
           {view === "week" && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Sun–Sat week · tap a day to open the day grid
+              {weekRangeLabel} week · person colors · tap a day to open the day grid
             </p>
           )}
         </div>
@@ -362,11 +413,7 @@ export default function CalendarPage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                const now = new Date();
-                setCursor(new Date(now.getFullYear(), now.getMonth(), 1));
-                setSelected(now);
-              }}
+              onClick={() => goToDate(new Date())}
               className="rounded-[6px] border border-border px-3 min-h-[44px] text-sm hover:bg-accent"
             >
               Today
@@ -409,7 +456,7 @@ export default function CalendarPage() {
             <section key={key}>
               <button
                 type="button"
-                onClick={() => { setSelected(date); setView("day"); }}
+                onClick={() => goToDate(date, { view: "day" })}
                 className="mb-2 flex items-baseline gap-2 text-left"
               >
                 <h2 className="font-heading text-sm font-semibold">
@@ -458,16 +505,24 @@ export default function CalendarPage() {
 
       {view === "week" && tabParam !== "unscheduled" && (
         <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
-          <WeekView
-            days={weekDayList}
-            byDay={byDay}
-            allItems={all}
-            todayKey={todayKey}
-            isMobile={isMobile}
-            people={people}
-            onSelectDay={(d) => { setSelected(d); setView("day"); }}
-            onOpenItem={setActive}
-          />
+          <div>
+            <PersonFilterBar
+              people={filterPeople}
+              personFilter={personFilter}
+              onChange={setPersonFilter}
+            />
+            <WeekView
+              days={weekDayList}
+              byDay={byDay}
+              allItems={all}
+              todayKey={todayKey}
+              isMobile={isMobile}
+              people={people}
+              personFilter={personFilter}
+              onSelectDay={(d) => goToDate(d, { view: "day" })}
+              onOpenItem={setActive}
+            />
+          </div>
           {!isMobile && (
             <div className="space-y-3">
               <UnscheduledPool
@@ -532,6 +587,12 @@ export default function CalendarPage() {
                 )}
               </div>
 
+              <PersonFilterBar
+                people={filterPeople}
+                personFilter={personFilter}
+                onChange={setPersonFilter}
+              />
+
               <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
                 <DayGrid
                   day={selected}
@@ -585,7 +646,7 @@ export default function CalendarPage() {
                   <button
                     key={i}
                     type="button"
-                    onClick={() => { setSelected(d); setView("day"); }}
+                    onClick={() => goToDate(d, { view: "day" })}
                     className={cn(
                       "aspect-square sm:aspect-auto sm:min-h-[64px] rounded-[6px] border p-1.5 text-left transition flex flex-col min-h-[44px]",
                       isSel ? "border-primary bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50"
@@ -595,9 +656,20 @@ export default function CalendarPage() {
                       {d.getDate()}
                     </span>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {dayItems.slice(0, 3).map((it) => (
-                        <span key={it.id} className={cn("h-1.5 w-1.5 rounded-full", it.completed ? "bg-muted-foreground/30" : "bg-primary")} title={it.content} />
-                      ))}
+                      {dayItems.slice(0, 3).map((it) => {
+                        const color = resolvePersonColor(it.responsible_name, people);
+                        return (
+                          <span
+                            key={it.id}
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              it.completed ? "bg-muted-foreground/30" : !color && "bg-primary"
+                            )}
+                            style={!it.completed ? personChipDotStyle(color) : undefined}
+                            title={it.content}
+                          />
+                        );
+                      })}
                       {dayItems.length > 3 && <span className="text-[9px] text-muted-foreground">+{dayItems.length - 3}</span>}
                     </div>
                   </button>
@@ -669,6 +741,62 @@ export default function CalendarPage() {
       )}
 
       <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+    </div>
+  );
+}
+
+function PersonFilterBar({ people, personFilter, onChange }) {
+  if (!people?.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mb-4">
+      <span className="text-[11px] font-medium text-muted-foreground mr-1">People</span>
+      <button
+        type="button"
+        onClick={() => onChange("all")}
+        className={cn(
+          "inline-flex min-h-[32px] items-center rounded-[6px] border px-2.5 text-xs font-medium transition",
+          personFilter === "all"
+            ? "border-primary bg-primary/10 text-primary"
+            : "border-border text-muted-foreground hover:bg-accent"
+        )}
+        aria-pressed={personFilter === "all"}
+      >
+        Everyone
+      </button>
+      {people.map(({ name, color }) => (
+        <button
+          key={name}
+          type="button"
+          onClick={() => onChange(personFilter === name ? "all" : name)}
+          className={cn(
+            "inline-flex min-h-[32px] items-center gap-1.5 rounded-[6px] border px-2.5 text-xs font-medium transition",
+            personFilter === name
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:bg-accent"
+          )}
+          aria-pressed={personFilter === name}
+        >
+          <span
+            className="h-2 w-2 rounded-full shrink-0 bg-muted-foreground/40"
+            style={personChipDotStyle(color)}
+            aria-hidden
+          />
+          {name}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange(personFilter === "Unassigned" ? "all" : "Unassigned")}
+        className={cn(
+          "inline-flex min-h-[32px] items-center rounded-[6px] border px-2.5 text-xs font-medium transition",
+          personFilter === "Unassigned"
+            ? "border-primary bg-primary/10 text-primary"
+            : "border-border text-muted-foreground hover:bg-accent"
+        )}
+        aria-pressed={personFilter === "Unassigned"}
+      >
+        Unassigned
+      </button>
     </div>
   );
 }

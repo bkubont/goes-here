@@ -2,11 +2,14 @@ import React from "react";
 import { ITEM_TYPE_MAP, formatTime, toDayKey } from "@/lib/itemTypes";
 import { formatDuration } from "@/lib/durationDefaults";
 import { resolveBlockMinutes } from "@/lib/estimateDuration";
-import { personAccentStyle, resolvePersonColor } from "@/lib/personColor";
+import { personAccentStyle, personChipDotStyle, resolvePersonColor } from "@/lib/personColor";
 import { cn } from "@/lib/utils";
 
 /** Sunday-start by default; callers pass weekStartsOn from Settings preference. */
 export const WEEK_STARTS_ON = 0;
+
+/** Max timed rows shown per day column before "+N more" (keeps 2–5 people readable). */
+const MAX_VISIBLE_TIMED = 6;
 
 export function startOfWeek(date, weekStartsOn = WEEK_STARTS_ON) {
   const d = new Date(date);
@@ -54,35 +57,63 @@ export function unscheduledDueCount(all, dayKey) {
   }).length;
 }
 
-function WeekItemRow({ it, allItems, onOpen, people }) {
+export function matchesPersonFilter(it, personFilter) {
+  if (!personFilter || personFilter === "all") return true;
+  const who = it.responsible_name || "Unassigned";
+  return who === personFilter;
+}
+
+function WeekItemRow({ it, allItems, onOpen, people, dense }) {
   const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
   const dur = resolveBlockMinutes(it, allItems);
-  const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
+  const color = resolvePersonColor(it.responsible_name, people);
+  const accent = personAccentStyle(color);
   return (
     <button
       type="button"
-      onClick={() => onOpen?.(it)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen?.(it);
+      }}
       className={cn(
-        "w-full text-left rounded-[6px] border border-border px-2 py-1.5 hover:bg-accent/40 transition min-h-[40px] text-foreground",
+        "w-full text-left rounded-[6px] border border-border hover:bg-accent/40 transition text-foreground",
+        dense ? "px-1.5 py-1 min-h-[32px]" : "px-2 py-1.5 min-h-[40px]",
         it.completed && "opacity-60"
       )}
       style={accent}
+      title={[it.content, it.responsible_name, formatTime(it.time)].filter(Boolean).join(" · ")}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 min-w-0">
+        {color && (
+          <span
+            className="h-1.5 w-1.5 rounded-full shrink-0"
+            style={personChipDotStyle(color)}
+            aria-hidden
+          />
+        )}
         {it.time && (
-          <span className="text-[10px] font-semibold text-primary shrink-0 tabular-nums">
+          <span className={cn(
+            "font-semibold text-primary shrink-0 tabular-nums",
+            dense ? "text-[9px]" : "text-[10px]"
+          )}>
             {formatTime(it.time)}
           </span>
         )}
-        <span className={cn("text-xs font-medium truncate", it.completed && "line-through")}>
+        <span className={cn(
+          "font-medium truncate",
+          dense ? "text-[11px] leading-tight" : "text-xs",
+          it.completed && "line-through"
+        )}>
           {it.content}
         </span>
       </div>
-      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-        {[formatDuration(dur), it.responsible_name || it.person_name, TI.label]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
+      {!dense && (
+        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+          {[formatDuration(dur), it.responsible_name || it.person_name, TI.label]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
     </button>
   );
 }
@@ -97,10 +128,14 @@ function DayColumn({
   onOpenItem,
   compact,
   people,
+  personFilter,
+  dense,
 }) {
   const key = toDayKey(date);
   const isToday = key === todayKey;
-  const timed = timedForDay(dayItems);
+  const timed = timedForDay(dayItems).filter((it) => matchesPersonFilter(it, personFilter));
+  const visible = timed.slice(0, MAX_VISIBLE_TIMED);
+  const overflow = timed.length - visible.length;
 
   return (
     <section
@@ -121,7 +156,7 @@ function DayColumn({
           )}
         >
           {date.toLocaleDateString(undefined, {
-            weekday: compact ? "short" : "short",
+            weekday: "short",
             month: "short",
             day: "numeric",
           })}
@@ -139,16 +174,26 @@ function DayColumn({
       {timed.length === 0 ? (
         <p className="text-xs text-muted-foreground pl-0.5">Nothing timed</p>
       ) : (
-        <div className={cn("space-y-1.5", !compact && "flex-1 min-h-0 overflow-y-auto")}>
-          {timed.map((it) => (
+        <div className={cn("space-y-1", !compact && "flex-1 min-h-0 overflow-y-auto")}>
+          {visible.map((it) => (
             <WeekItemRow
               key={it.id}
               it={it}
               allItems={allItems}
               onOpen={onOpenItem}
               people={people}
+              dense={dense}
             />
           ))}
+          {overflow > 0 && (
+            <button
+              type="button"
+              onClick={() => onSelectDay?.(date)}
+              className="w-full text-left text-[10px] font-medium text-primary hover:underline px-1 py-1 min-h-[28px]"
+            >
+              +{overflow} more
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -157,6 +202,7 @@ function DayColumn({
 
 /**
  * Week calendar: stacked day sections on narrow screens; 7 columns on desktop.
+ * Person-colored blocks; optional personFilter for family focus.
  */
 export default function WeekView({
   days,
@@ -167,7 +213,10 @@ export default function WeekView({
   onSelectDay,
   onOpenItem,
   people = [],
+  personFilter = "all",
 }) {
+  const dense = !isMobile;
+
   if (isMobile) {
     return (
       <div className="space-y-4">
@@ -184,7 +233,9 @@ export default function WeekView({
               onSelectDay={onSelectDay}
               onOpenItem={onOpenItem}
               people={people}
+              personFilter={personFilter}
               compact
+              dense={false}
             />
           );
         })}
@@ -208,7 +259,9 @@ export default function WeekView({
                 onSelectDay={onSelectDay}
                 onOpenItem={onOpenItem}
                 people={people}
+                personFilter={personFilter}
                 compact={false}
+                dense={dense}
               />
             </div>
           );
