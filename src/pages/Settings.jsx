@@ -628,6 +628,7 @@ export default function Settings() {
         </div>
         <p className="text-xs text-muted-foreground">
           Opens Calendar to this view when no view is in the URL. This device only.
+          For a kitchen wall glance, choose Month — Day stays best for time-blocking.
         </p>
         <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
           {CALENDAR_VIEWS.map((v) => (
@@ -642,7 +643,7 @@ export default function Settings() {
                   : "border-border bg-card text-muted-foreground"
               )}
             >
-              {v}
+              {v === "month" ? "Month · wall" : v}
             </button>
           ))}
         </div>

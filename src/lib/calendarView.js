@@ -68,6 +68,29 @@ export function parseCalendarDateParam(value) {
   return d;
 }
 
+/**
+ * Resolve `?person=` to a Calendar person filter.
+ * Matches a known responsible name (case-insensitive) or "Unassigned".
+ * Pass `knownNames == null` while the people query is still loading to keep the
+ * raw value optimistically; pass an array (even empty) after a successful fetch
+ * to validate strictly.
+ * @returns {string|null} name, "Unassigned", or null if absent/invalid
+ */
+export function parseCalendarPersonParam(value, knownNames) {
+  if (value == null || typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw === "Unassigned" || raw.toLowerCase() === "unassigned") {
+    return "Unassigned";
+  }
+  // Still loading people — do not reject bookmarks yet.
+  if (knownNames == null) return raw;
+  const exact = knownNames.find((n) => n === raw);
+  if (exact) return exact;
+  const ci = knownNames.find((n) => typeof n === "string" && n.toLowerCase() === raw.toLowerCase());
+  return ci || null;
+}
+
 /** Reactive default calendar view preference. */
 export function useDefaultCalendarView() {
   const [view, setView] = useState(loadDefaultCalendarView);

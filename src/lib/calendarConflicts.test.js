@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCalendarDateParam } from "./calendarView.js";
+import { parseCalendarDateParam, parseCalendarPersonParam } from "./calendarView.js";
 import { overlappingItemIds, snapDurationMinutes } from "./calendarConflicts.js";
 
 describe("parseCalendarDateParam", () => {
@@ -19,6 +19,24 @@ describe("parseCalendarDateParam", () => {
     expect(parseCalendarDateParam("2026-13-01")).toBeNull();
     expect(parseCalendarDateParam("2026-02-31")).toBeNull();
     expect(parseCalendarDateParam("not-a-date")).toBeNull();
+  });
+});
+
+describe("parseCalendarPersonParam", () => {
+  it("matches known names case-insensitively and Unassigned", () => {
+    expect(parseCalendarPersonParam("Ada", ["Ada", "Bob"])).toBe("Ada");
+    expect(parseCalendarPersonParam("ada", ["Ada", "Bob"])).toBe("Ada");
+    expect(parseCalendarPersonParam("Unassigned", ["Ada"])).toBe("Unassigned");
+    expect(parseCalendarPersonParam("unassigned", [])).toBe("Unassigned");
+  });
+
+  it("keeps raw while loading (null knownNames); rejects unknown after load", () => {
+    expect(parseCalendarPersonParam("Ada", null)).toBe("Ada");
+    expect(parseCalendarPersonParam("Ada", undefined)).toBe("Ada");
+    expect(parseCalendarPersonParam("Ada", [])).toBeNull();
+    expect(parseCalendarPersonParam("Nobody", ["Ada"])).toBeNull();
+    expect(parseCalendarPersonParam("", ["Ada"])).toBeNull();
+    expect(parseCalendarPersonParam(null, ["Ada"])).toBeNull();
   });
 });
 
