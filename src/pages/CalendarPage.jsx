@@ -17,7 +17,11 @@ import { downloadDayIcs } from "@/lib/ics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeekStartsOn, weekDayLabels, monthGridPad } from "@/lib/weekStart";
-import { parseCalendarDateParam, resolveCalendarView } from "@/lib/calendarView";
+import {
+  parseCalendarDateParam,
+  parseCalendarPersonParam,
+  resolveCalendarView,
+} from "@/lib/calendarView";
 import {
   personAccentStyle,
   personBarStyle,
@@ -88,6 +92,7 @@ export default function CalendarPage() {
   const viewParam = searchParams.get("view");
   const tabParam = searchParams.get("tab");
   const dateParam = searchParams.get("date");
+  const personParam = searchParams.get("person");
   const dateFromUrl = React.useMemo(() => parseCalendarDateParam(dateParam), [dateParam]);
   // URL ?view= wins; otherwise Settings default; else agenda (mobile) / day (desktop).
   const view = resolveCalendarView(viewParam, { isMobile });
@@ -101,7 +106,9 @@ export default function CalendarPage() {
   const [active, setActive] = React.useState(null);
   const [poolSelected, setPoolSelected] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
-  const [personFilter, setPersonFilter] = React.useState("all");
+  const [personFilter, setPersonFilter] = React.useState(() =>
+    parseCalendarPersonParam(personParam, []) || "all"
+  );
   const [myDayOnly, setMyDayOnly] = React.useState(false);
   const [scheduleTarget, setScheduleTarget] = React.useState(null);
   const [scheduleTime, setScheduleTime] = React.useState("09:00");
@@ -207,6 +214,32 @@ export default function CalendarPage() {
     }));
   }, [responsibleNames, people]);
 
+  // Deep link: ?person=Name restores kitchen bookmarks; keep across views.
+  React.useEffect(() => {
+    if (!personParam) {
+      if (personFilter !== "all") setPersonFilter("all");
+      return;
+    }
+    const resolved = parseCalendarPersonParam(personParam, responsibleNames);
+    if (!resolved) {
+      // Unknown name after people load — drop stale bookmark param.
+      if (responsibleNames.length > 0) {
+        const next = new URLSearchParams(searchParams);
+        next.delete("person");
+        setSearchParams(next, { replace: true });
+        setPersonFilter("all");
+      }
+      return;
+    }
+    if (resolved !== personFilter) setPersonFilter(resolved);
+    if (resolved !== "all") setMyDayOnly(false);
+  }, [personParam, responsibleNames.join("\0")]); // eslint-disable-line react-hooks/exhaustive-deps -- URL + known names only
+
+  const dayAllDayItems = React.useMemo(
+    () => selItems.filter((it) => !hasClockTime(it)),
+    [selItems]
+  );
+
   const dayForWorkload = selItems.filter((it) => !it.completed && it.time);
   const workload = React.useMemo(() => {
     const map = {};
@@ -236,10 +269,18 @@ export default function CalendarPage() {
     return days;
   }, [selected, byDay, myDayOnly, meName, personFilter]);
 
+  function writePersonParam(name, baseParams) {
+    const next = new URLSearchParams(baseParams || searchParams);
+    if (!name || name === "all") next.delete("person");
+    else next.set("person", name);
+    return next;
+  }
+
   function applyPersonFilter(next) {
     setPersonFilter(next);
     // My Day takes precedence in agenda/day lists — clear it so person chips win.
     if (next !== "all") setMyDayOnly(false);
+    setSearchParams(writePersonParam(next), { replace: true });
   }
 
   function toggleMyDayOnly() {
@@ -252,13 +293,16 @@ export default function CalendarPage() {
     }
     setMyDayOnly((prev) => {
       const on = !prev;
-      if (on) setPersonFilter("all");
+      if (on) {
+        setPersonFilter("all");
+        setSearchParams(writePersonParam("all"), { replace: true });
+      }
       return on;
     });
   }
 
   function setView(v) {
-    // Keep personFilter across Day/Week/Month/Agenda so kitchen wall filters stick.
+    // Keep personFilter (+ ?person=) across Day/Week/Month/Agenda for kitchen bookmarks.
     const next = new URLSearchParams(searchParams);
     if (v === "day" && !isMobile) next.delete("view");
     else next.set("view", v);
@@ -374,12 +418,12 @@ export default function CalendarPage() {
           )}
           {view === "week" && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {weekRangeLabel} week · person colors · tap a day to open the day grid
+              {weekRangeLabel} week · person colors · all-day strip · tap a day for the day grid
             </p>
           )}
           {view === "month" && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Family wall glance · person colors · tap a day for details
+              Family wall glance · tap a day to focus that week · Open day from the side panel
             </p>
           )}
         </div>
@@ -515,9 +559,9 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => goToDate(date, { view: "day" })}
-                className="mb-2 flex items-baseline gap-2 text-left"
+                className="mb-2.5 flex items-baseline gap-2 text-left min-h-[40px]"
               >
-                <h2 className="font-heading text-sm font-semibold">
+                <h2 className="font-heading text-base font-semibold">
                   {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                 </h2>
                 {key === todayKey && <span className="text-[11px] font-medium text-primary">Today</span>}
@@ -525,26 +569,39 @@ export default function CalendarPage() {
               {dayItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground pl-1">Nothing scheduled</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {dayItems.map((it) => {
                     const TI = ITEM_TYPE_MAP[it.type] || ITEM_TYPE_MAP.todo;
                     const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
+                    const timeLabel = hasClockTime(it) ? formatTime(it.time) : null;
                     return (
                       <div
                         key={it.id}
-                        className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-foreground"
+                        className="flex items-stretch gap-3 rounded-2xl border border-border bg-card px-3.5 py-3.5 min-h-[68px] text-foreground shadow-sm"
                         style={accent}
                       >
-                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setActive(it)}>
-                          <div className="flex items-center gap-2">
-                            {it.time && <span className="text-xs font-semibold text-primary shrink-0">{formatTime(it.time)}</span>}
-                            <span className={cn("text-sm font-medium truncate", it.completed && "line-through opacity-60")}>{it.content}</span>
+                        <button type="button" className="min-w-0 flex-1 flex items-stretch gap-3 text-left" onClick={() => setActive(it)}>
+                          <div className="w-[4.5rem] shrink-0 flex flex-col justify-center border-r border-border/60 pr-2">
+                            {timeLabel ? (
+                              <span className="text-sm font-semibold tabular-nums leading-tight text-foreground">
+                                {timeLabel}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">
+                                All day
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            {TI.label}{it.responsible_name ? ` · ${it.responsible_name}` : ""}
-                          </p>
+                          <div className="min-w-0 flex-1 flex flex-col justify-center">
+                            <span className={cn("text-base font-semibold leading-snug line-clamp-2", it.completed && "line-through opacity-60")}>
+                              {it.content}
+                            </span>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {TI.label}{it.responsible_name ? ` · ${it.responsible_name}` : ""}
+                            </p>
+                          </div>
                         </button>
-                        <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => openSchedule(it)}>
+                        <Button type="button" variant="outline" size="sm" className="shrink-0 self-center min-h-[40px]" onClick={() => openSchedule(it)}>
                           Reschedule
                         </Button>
                       </div>
@@ -651,6 +708,14 @@ export default function CalendarPage() {
                 onChange={applyPersonFilter}
               />
 
+              {dayAllDayItems.length > 0 && (
+                <AllDayStrip
+                  items={dayAllDayItems}
+                  people={people}
+                  onOpen={setActive}
+                />
+              )}
+
               <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
                 <DayGrid
                   day={selected}
@@ -715,13 +780,13 @@ export default function CalendarPage() {
                       key={i}
                       role="button"
                       tabIndex={0}
-                      onClick={() => goToDate(d)}
+                      onClick={() => goToDate(d, { view: "week" })}
                       onKeyDown={(e) => {
                         // Nested chip buttons must keep Enter/Space — only handle cell focus.
                         if (e.target !== e.currentTarget) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          goToDate(d);
+                          goToDate(d, { view: "week" });
                         }
                       }}
                       className={cn(
@@ -729,7 +794,7 @@ export default function CalendarPage() {
                         "min-h-[72px] md:min-h-[100px] lg:min-h-[112px]",
                         isSel ? "border-primary bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50"
                       )}
-                      aria-label={`${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${dayItems.length ? `, ${dayItems.length} items` : ""}`}
+                      aria-label={`${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${dayItems.length ? `, ${dayItems.length} items` : ""}. Open week.`}
                       aria-pressed={isSel}
                     >
                       <span
@@ -792,14 +857,25 @@ export default function CalendarPage() {
               </h3>
               <p className="text-xs text-muted-foreground mb-3">
                 {selItems.length} item{selItems.length !== 1 ? "s" : ""}
+                {" · "}
+                Tap a day on the grid to focus that week
               </p>
-              <button
-                type="button"
-                onClick={() => setView("day")}
-                className="mb-3 text-xs text-primary hover:underline min-h-[44px]"
-              >
-                Open day grid →
-              </button>
+              <div className="mb-3 flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => goToDate(selected, { view: "week" })}
+                  className="text-sm font-medium text-primary hover:underline min-h-[44px] text-left"
+                >
+                  Focus week →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => goToDate(selected, { view: isMobile ? "day" : null })}
+                  className="text-xs text-muted-foreground hover:text-primary hover:underline min-h-[40px] text-left"
+                >
+                  Open day grid →
+                </button>
+              </div>
               {selItems.length ? (
                 <div className="space-y-2">
                   {selItems.map((it) => {
@@ -870,6 +946,43 @@ export default function CalendarPage() {
       )}
 
       <ItemDetailDrawer item={active} open={!!active} onOpenChange={(o) => !o && setActive(null)} />
+    </div>
+  );
+}
+
+/** Day header strip for dated items without a clock time. */
+function AllDayStrip({ items, people, onOpen }) {
+  if (!items?.length) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          All day
+        </h3>
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {items.length}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((it) => {
+          const accent = personAccentStyle(resolvePersonColor(it.responsible_name, people));
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => onOpen?.(it)}
+              className={cn(
+                "min-h-[40px] max-w-full rounded-[6px] border border-border px-3 py-2 text-left text-sm font-medium truncate",
+                it.completed && "opacity-60 line-through"
+              )}
+              style={accent}
+              title={[it.content, it.responsible_name].filter(Boolean).join(" · ")}
+            >
+              {it.content}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

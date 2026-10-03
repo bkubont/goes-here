@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight, AlertCircle, CalendarClock, Receipt, Inbox as InboxIcon, Bell, Gift, History,
-  ShoppingCart, CalendarDays, Columns3,
+  ShoppingCart, CalendarDays, CalendarRange, Columns3,
 } from "lucide-react";
 import { useItems, usePeople, invalidateAll, patchItemsCaches } from "@/lib/queries";
 import { entities } from "@/api/entities";
@@ -126,6 +126,7 @@ export default function Home() {
 
   const todayKey = toDayKey(new Date());
   const calendarDayHref = `/calendar?view=day&date=${todayKey}`;
+  const calendarMonthHref = `/calendar?view=month&date=${todayKey}`;
   const calendarUnscheduledHref = `/calendar?view=day&date=${todayKey}&tab=unscheduled`;
   const calendarWeekHref = `/calendar?view=week&date=${todayKey}`;
 
@@ -259,7 +260,7 @@ export default function Home() {
             Showing today&apos;s items assigned to {meName}.
           </p>
         )}
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             to={calendarDayHref}
             className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
@@ -274,8 +275,21 @@ export default function Home() {
             <ArrowRight className="h-4 w-4 text-primary shrink-0" />
           </Link>
           <Link
+            to={calendarMonthHref}
+            className="flex min-h-[56px] items-center gap-3 rounded-xl border border-border bg-card px-3 py-3 transition hover:shadow-sm"
+          >
+            <span className="grid h-10 w-10 place-items-center rounded-[6px] border border-border bg-muted/40 text-foreground">
+              <CalendarRange className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Wall glance</p>
+              <p className="text-xs text-muted-foreground">Month view · who is busy when</p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          </Link>
+          <Link
             to="/board"
-            className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm"
+            className="flex min-h-[56px] items-center gap-3 rounded-xl border border-primary/35 bg-primary/5 px-3 py-3 transition hover:shadow-sm sm:col-span-2 lg:col-span-1"
           >
             <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-primary text-primary-foreground">
               <Columns3 className="h-5 w-5" />

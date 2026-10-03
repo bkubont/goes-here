@@ -46,6 +46,16 @@ export function timedForDay(dayItems) {
     .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 }
 
+/**
+ * Dated items without a clock time (all-day / no-time strip).
+ * Prefer `date` match; include due-only when not also listed by date elsewhere.
+ */
+export function allDayForDay(dayItems) {
+  return (dayItems || [])
+    .filter((it) => it && !hasClockTime(it))
+    .sort((a, b) => String(a.content || "").localeCompare(String(b.content || "")));
+}
+
 /** Unscheduled / due that day (dated or due, no clock time). */
 export function unscheduledDueCount(all, dayKey) {
   return (all || []).filter((it) => {
@@ -118,6 +128,29 @@ function WeekItemRow({ it, allItems, onOpen, people, dense }) {
   );
 }
 
+function AllDayChip({ it, people, onOpen, dense }) {
+  const color = resolvePersonColor(it.responsible_name, people);
+  const accent = personAccentStyle(color);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen?.(it);
+      }}
+      className={cn(
+        "w-full text-left rounded-[4px] border border-border/80 hover:bg-accent/40 transition text-foreground truncate",
+        dense ? "px-1 py-0.5 text-[10px] min-h-[22px]" : "px-1.5 py-1 text-[11px] min-h-[28px]",
+        it.completed && "opacity-60 line-through"
+      )}
+      style={accent}
+      title={[it.content, it.responsible_name, "All day"].filter(Boolean).join(" · ")}
+    >
+      <span className="font-medium">{it.content}</span>
+    </button>
+  );
+}
+
 function DayColumn({
   date,
   todayKey,
@@ -134,8 +167,11 @@ function DayColumn({
   const key = toDayKey(date);
   const isToday = key === todayKey;
   const timed = timedForDay(dayItems).filter((it) => matchesPersonFilter(it, personFilter));
+  const allDay = allDayForDay(dayItems).filter((it) => matchesPersonFilter(it, personFilter));
   const visible = timed.slice(0, MAX_VISIBLE_TIMED);
   const overflow = timed.length - visible.length;
+  const visibleAllDay = allDay.slice(0, dense ? 2 : 4);
+  const allDayOverflow = allDay.length - visibleAllDay.length;
 
   return (
     <section
@@ -164,15 +200,43 @@ function DayColumn({
         {isToday && (
           <span className="text-[11px] font-medium text-primary">Today</span>
         )}
-        {unscheduledCount > 0 && (
+        {unscheduledCount > allDay.length && (
           <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-            {unscheduledCount} unscheduled
+            {unscheduledCount - allDay.length} unscheduled
           </span>
         )}
       </button>
 
+      {allDay.length > 0 && (
+        <div className={cn("mb-2 space-y-0.5 rounded-[6px] bg-muted/40 p-1", dense && "p-0.5")}>
+          <p className="px-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+            All day
+          </p>
+          {visibleAllDay.map((it) => (
+            <AllDayChip
+              key={it.id}
+              it={it}
+              people={people}
+              onOpen={onOpenItem}
+              dense={dense}
+            />
+          ))}
+          {allDayOverflow > 0 && (
+            <button
+              type="button"
+              onClick={() => onSelectDay?.(date)}
+              className="w-full text-left text-[10px] font-medium text-primary hover:underline px-1 py-0.5"
+            >
+              +{allDayOverflow} more
+            </button>
+          )}
+        </div>
+      )}
+
       {timed.length === 0 ? (
-        <p className="text-xs text-muted-foreground pl-0.5">Nothing timed</p>
+        <p className="text-xs text-muted-foreground pl-0.5">
+          {allDay.length > 0 ? "Nothing timed" : "Nothing scheduled"}
+        </p>
       ) : (
         <div className={cn("space-y-1", !compact && "flex-1 min-h-0 overflow-y-auto")}>
           {visible.map((it) => (
