@@ -207,6 +207,10 @@ export default function CalendarPage() {
   }, [selected, byDay, myDayOnly, meName, personFilter]);
 
   function setView(v) {
+    // PersonFilterBar only shows on day/week — clear so Month/Agenda aren't silently filtered.
+    if (v !== "day" && v !== "week" && personFilter !== "all") {
+      setPersonFilter("all");
+    }
     const next = new URLSearchParams(searchParams);
     if (v === "day" && !isMobile) next.delete("view");
     else next.set("view", v);
@@ -405,7 +409,7 @@ export default function CalendarPage() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => (view === "month" ? setCursor(new Date(year, month - 1, 1)) : shiftDay(-navStep()))}
+              onClick={() => (view === "month" ? goToDate(new Date(year, month - 1, 1)) : shiftDay(-navStep()))}
               className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
               aria-label="Previous"
             >
@@ -420,7 +424,7 @@ export default function CalendarPage() {
             </button>
             <button
               type="button"
-              onClick={() => (view === "month" ? setCursor(new Date(year, month + 1, 1)) : shiftDay(navStep()))}
+              onClick={() => (view === "month" ? goToDate(new Date(year, month + 1, 1)) : shiftDay(navStep()))}
               className="grid h-11 w-11 place-items-center rounded-[6px] border border-border hover:bg-accent"
               aria-label="Next"
             >
