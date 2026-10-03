@@ -71,22 +71,23 @@ export function parseCalendarDateParam(value) {
 /**
  * Resolve `?person=` to a Calendar person filter.
  * Matches a known responsible name (case-insensitive) or "Unassigned".
- * When `knownNames` is empty (people still loading), returns the raw trimmed
- * value so the filter can restore as soon as names arrive.
+ * Pass `knownNames == null` while the people query is still loading to keep the
+ * raw value optimistically; pass an array (even empty) after a successful fetch
+ * to validate strictly.
  * @returns {string|null} name, "Unassigned", or null if absent/invalid
  */
-export function parseCalendarPersonParam(value, knownNames = []) {
+export function parseCalendarPersonParam(value, knownNames) {
   if (value == null || typeof value !== "string") return null;
   const raw = value.trim();
   if (!raw) return null;
   if (raw === "Unassigned" || raw.toLowerCase() === "unassigned") {
     return "Unassigned";
   }
-  const names = knownNames || [];
-  if (!names.length) return raw;
-  const exact = names.find((n) => n === raw);
+  // Still loading people — do not reject bookmarks yet.
+  if (knownNames == null) return raw;
+  const exact = knownNames.find((n) => n === raw);
   if (exact) return exact;
-  const ci = names.find((n) => typeof n === "string" && n.toLowerCase() === raw.toLowerCase());
+  const ci = knownNames.find((n) => typeof n === "string" && n.toLowerCase() === raw.toLowerCase());
   return ci || null;
 }
 

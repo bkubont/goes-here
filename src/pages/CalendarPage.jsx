@@ -80,7 +80,7 @@ function recordId(it) {
 
 export default function CalendarPage() {
   const { data: items } = useItems({});
-  const { data: peopleData } = usePeople();
+  const { data: peopleData, isSuccess: peopleReady } = usePeople();
   const people = peopleData || [];
   const meName = useDevicePerson();
   const all = items || [];
@@ -107,7 +107,7 @@ export default function CalendarPage() {
   const [poolSelected, setPoolSelected] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
   const [personFilter, setPersonFilter] = React.useState(() =>
-    parseCalendarPersonParam(personParam, []) || "all"
+    parseCalendarPersonParam(personParam, null) || "all"
   );
   const [myDayOnly, setMyDayOnly] = React.useState(false);
   const [scheduleTarget, setScheduleTarget] = React.useState(null);
@@ -214,26 +214,38 @@ export default function CalendarPage() {
     }));
   }, [responsibleNames, people]);
 
+  // People-table names only — used to validate ?person= after the people query succeeds.
+  // Do not use item-derived responsibleNames (can omit someone with no assigned items).
+  const peopleNames = React.useMemo(
+    () => people.map((p) => p?.name).filter(Boolean),
+    [people]
+  );
+
   // Deep link: ?person=Name restores kitchen bookmarks; keep across views.
   React.useEffect(() => {
     if (!personParam) {
       if (personFilter !== "all") setPersonFilter("all");
       return;
     }
-    const resolved = parseCalendarPersonParam(personParam, responsibleNames);
+    // Optimistic restore while people are loading — never reject yet.
+    if (!peopleReady) {
+      const optimistic = parseCalendarPersonParam(personParam, null);
+      if (optimistic && optimistic !== personFilter) setPersonFilter(optimistic);
+      if (optimistic && optimistic !== "all") setMyDayOnly(false);
+      return;
+    }
+    const resolved = parseCalendarPersonParam(personParam, peopleNames);
     if (!resolved) {
-      // Unknown name after people load — drop stale bookmark param.
-      if (responsibleNames.length > 0) {
-        const next = new URLSearchParams(searchParams);
-        next.delete("person");
-        setSearchParams(next, { replace: true });
-        setPersonFilter("all");
-      }
+      // Unknown after a successful people fetch — drop stale bookmark.
+      const next = new URLSearchParams(searchParams);
+      next.delete("person");
+      setSearchParams(next, { replace: true });
+      setPersonFilter("all");
       return;
     }
     if (resolved !== personFilter) setPersonFilter(resolved);
     if (resolved !== "all") setMyDayOnly(false);
-  }, [personParam, responsibleNames.join("\0")]); // eslint-disable-line react-hooks/exhaustive-deps -- URL + known names only
+  }, [personParam, peopleReady, peopleNames.join("\0")]); // eslint-disable-line react-hooks/exhaustive-deps -- URL + people query only
 
   const dayAllDayItems = React.useMemo(
     () => selItems.filter((it) => !hasClockTime(it)),

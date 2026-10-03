@@ -30,8 +30,10 @@ describe("parseCalendarPersonParam", () => {
     expect(parseCalendarPersonParam("unassigned", [])).toBe("Unassigned");
   });
 
-  it("returns raw while names are loading; null when unknown after load", () => {
-    expect(parseCalendarPersonParam("Ada", [])).toBe("Ada");
+  it("keeps raw while loading (null knownNames); rejects unknown after load", () => {
+    expect(parseCalendarPersonParam("Ada", null)).toBe("Ada");
+    expect(parseCalendarPersonParam("Ada", undefined)).toBe("Ada");
+    expect(parseCalendarPersonParam("Ada", [])).toBeNull();
     expect(parseCalendarPersonParam("Nobody", ["Ada"])).toBeNull();
     expect(parseCalendarPersonParam("", ["Ada"])).toBeNull();
     expect(parseCalendarPersonParam(null, ["Ada"])).toBeNull();

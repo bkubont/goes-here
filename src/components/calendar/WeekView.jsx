@@ -56,21 +56,44 @@ export function allDayForDay(dayItems) {
     .sort((a, b) => String(a.content || "").localeCompare(String(b.content || "")));
 }
 
-/** Unscheduled / due that day (dated or due, no clock time). */
-export function unscheduledDueCount(all, dayKey) {
-  return (all || []).filter((it) => {
-    if (!it || it.completed) return false;
-    if (hasClockTime(it)) return false;
-    const dateKey = toDayKey(it.date);
-    const dueKey = toDayKey(it.due_date);
-    return dateKey === dayKey || dueKey === dayKey;
-  }).length;
-}
-
 export function matchesPersonFilter(it, personFilter) {
   if (!personFilter || personFilter === "all") return true;
   const who = it.responsible_name || "Unassigned";
   return who === personFilter;
+}
+
+/**
+ * Incomplete items dated or due on dayKey with no clock time.
+ * Applies the same person filter as Week columns / all-day chips.
+ */
+export function unscheduledDueItems(all, dayKey, personFilter = "all") {
+  return (all || []).filter((it) => {
+    if (!it || it.completed) return false;
+    if (hasClockTime(it)) return false;
+    if (!matchesPersonFilter(it, personFilter)) return false;
+    const dateKey = toDayKey(it.date);
+    const dueKey = toDayKey(it.due_date);
+    return dateKey === dayKey || dueKey === dayKey;
+  });
+}
+
+/** Unscheduled / due that day (dated or due, no clock time). */
+export function unscheduledDueCount(all, dayKey, personFilter = "all") {
+  return unscheduledDueItems(all, dayKey, personFilter).length;
+}
+
+/**
+ * Unscheduled items not already shown in the all-day strip (same completed + person filters).
+ */
+export function remainingUnscheduledCount(all, dayKey, dayItems, personFilter = "all") {
+  const shownIds = new Set(
+    allDayForDay(dayItems)
+      .filter((it) => it && !it.completed && matchesPersonFilter(it, personFilter))
+      .map((it) => it.id)
+  );
+  return unscheduledDueItems(all, dayKey, personFilter)
+    .filter((it) => !shownIds.has(it.id))
+    .length;
 }
 
 function WeekItemRow({ it, allItems, onOpen, people, dense }) {
@@ -156,7 +179,6 @@ function DayColumn({
   todayKey,
   dayItems,
   allItems,
-  unscheduledCount,
   onSelectDay,
   onOpenItem,
   compact,
@@ -172,6 +194,7 @@ function DayColumn({
   const overflow = timed.length - visible.length;
   const visibleAllDay = allDay.slice(0, dense ? 2 : 4);
   const allDayOverflow = allDay.length - visibleAllDay.length;
+  const extraUnscheduled = remainingUnscheduledCount(allItems, key, dayItems, personFilter);
 
   return (
     <section
@@ -200,9 +223,9 @@ function DayColumn({
         {isToday && (
           <span className="text-[11px] font-medium text-primary">Today</span>
         )}
-        {unscheduledCount > allDay.length && (
+        {extraUnscheduled > 0 && (
           <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-            {unscheduledCount - allDay.length} unscheduled
+            {extraUnscheduled} unscheduled
           </span>
         )}
       </button>
@@ -293,7 +316,6 @@ export default function WeekView({
               todayKey={todayKey}
               dayItems={byDay[key] || []}
               allItems={allItems}
-              unscheduledCount={unscheduledDueCount(allItems, key)}
               onSelectDay={onSelectDay}
               onOpenItem={onOpenItem}
               people={people}
@@ -319,7 +341,6 @@ export default function WeekView({
                 todayKey={todayKey}
                 dayItems={byDay[key] || []}
                 allItems={allItems}
-                unscheduledCount={unscheduledDueCount(allItems, key)}
                 onSelectDay={onSelectDay}
                 onOpenItem={onOpenItem}
                 people={people}
