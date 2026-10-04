@@ -325,6 +325,8 @@ export default function DayGrid({
   }
 
   function onBlockKeyDown(e, it) {
+    // Ignore key events from nested −15/+15 (or Open) controls.
+    if (e.target !== e.currentTarget) return;
     if (e.key === "ArrowUp") {
       e.preventDefault();
       nudgeBlock(it, -SNAP_MINUTES);

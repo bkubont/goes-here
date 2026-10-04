@@ -202,9 +202,11 @@ export default function CalendarPage() {
     return all.filter((it) => isPoolCandidate(it, selKey));
   }, [all, selKey]);
 
+  // All timed blocks for the selected day — ignore person/My Day filters so
+  // Next-free availability accounts for everyone else's schedule.
   const dayTimedItems = React.useMemo(
-    () => selItems.filter((it) => it.time),
-    [selItems]
+    () => (byDay[selKey] || []).filter((it) => it.time),
+    [byDay, selKey]
   );
 
   const responsibleNames = React.useMemo(() => {

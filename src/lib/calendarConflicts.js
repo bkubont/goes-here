@@ -73,8 +73,29 @@ export function snapDurationMinutes(minutes) {
 }
 
 /**
+ * Duration used when testing whether a block fits a free slot.
+ * Ceil to 15m (never round down) so a 20m item cannot be packed into a 15m gap.
+ */
+export function fitDurationMinutes(minutes) {
+  const raw = Number(minutes);
+  const n = Number.isFinite(raw) && raw > 0 ? raw : SNAP_MINUTES;
+  return Math.max(SNAP_MINUTES, Math.ceil(n / SNAP_MINUTES) * SNAP_MINUTES);
+}
+
+/** Latest start (minutes from midnight) on the 15-min grid that still fits `durationMinutes`. */
+export function latestSnappedStart(
+  durationMinutes,
+  { dayStartMin = DEFAULT_DAY_START_MIN, dayEndMin = DEFAULT_DAY_END_MIN } = {}
+) {
+  const dur = Math.max(SNAP_MINUTES, Number(durationMinutes) || SNAP_MINUTES);
+  const rawMax = dayEndMin - dur;
+  const snappedMax = Math.floor(rawMax / SNAP_MINUTES) * SNAP_MINUTES;
+  return Math.max(dayStartMin, snappedMax);
+}
+
+/**
  * Nudge a clock time by delta minutes (usually ±15), clamped to the day window
- * so the block can still start before day end.
+ * on the 15-min grid so the block still fits before day end.
  */
 export function nudgeTimeString(
   timeStr,
@@ -87,12 +108,16 @@ export function nudgeTimeString(
 ) {
   const start = minutesFromMidnight(timeStr);
   const dur = Math.max(SNAP_MINUTES, Number(durationMinutes) || SNAP_MINUTES);
-  const maxStart = Math.max(dayStartMin, dayEndMin - dur);
-  const next = snapStartMinutes(start + Number(deltaMinutes || 0), {
-    dayStartMin,
-    dayEndMin,
-  });
-  return formatMinutesHHMM(Math.max(dayStartMin, Math.min(maxStart, next)));
+  const maxStart = latestSnappedStart(dur, { dayStartMin, dayEndMin });
+  const next = Math.round((start + Number(deltaMinutes || 0)) / SNAP_MINUTES) * SNAP_MINUTES;
+  if (next < dayStartMin || next > maxStart) {
+    // Stay put when the nudge would leave the valid snapped window.
+    if (start >= dayStartMin && start <= maxStart && start % SNAP_MINUTES === 0) {
+      return formatMinutesHHMM(start);
+    }
+    return formatMinutesHHMM(Math.max(dayStartMin, Math.min(maxStart, start)));
+  }
+  return formatMinutesHHMM(next);
 }
 
 /**
@@ -112,7 +137,8 @@ export function nextFreeSlot(
     excludeId = null,
   } = {}
 ) {
-  const dur = snapDurationMinutes(durationMinutes || SNAP_MINUTES);
+  // Fit check must ceil (never round down) — a 20m block needs 30m of clear grid.
+  const dur = fitDurationMinutes(durationMinutes);
   const ranges = (scheduled || [])
     .filter((it) => it?.time && it.id !== excludeId)
     .map((it) => {
@@ -120,7 +146,8 @@ export function nextFreeSlot(
       const blockDur = typeof resolveMinutes === "function"
         ? resolveMinutes(it)
         : SNAP_MINUTES;
-      const end = start + Math.max(SNAP_MINUTES, blockDur || SNAP_MINUTES);
+      // Occupied ranges use actual duration (not rounded down).
+      const end = start + Math.max(1, Number(blockDur) || SNAP_MINUTES);
       return { start, end };
     })
     .sort((a, b) => a.start - b.start || a.end - b.end);
@@ -129,7 +156,7 @@ export function nextFreeSlot(
     dayStartMin,
     dayEndMin,
   });
-  const latestStart = dayEndMin - dur;
+  const latestStart = latestSnappedStart(dur, { dayStartMin, dayEndMin });
 
   while (cursor <= latestStart) {
     const end = cursor + dur;
