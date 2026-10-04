@@ -106,6 +106,7 @@ export default function CalendarPage() {
   const [selected, setSelected] = React.useState(() => dateFromUrl || new Date());
   const [active, setActive] = React.useState(null);
   const [poolSelected, setPoolSelected] = React.useState(null);
+  const [draggingPoolId, setDraggingPoolId] = React.useState(null);
   const [workloadPerson, setWorkloadPerson] = React.useState("all");
   const [personFilter, setPersonFilter] = React.useState(() =>
     parseCalendarPersonParam(personParam, null) || "all"
@@ -200,6 +201,13 @@ export default function CalendarPage() {
   const poolItems = React.useMemo(() => {
     return all.filter((it) => isPoolCandidate(it, selKey));
   }, [all, selKey]);
+
+  // All timed blocks for the selected day — ignore person/My Day filters so
+  // Next-free availability accounts for everyone else's schedule.
+  const dayTimedItems = React.useMemo(
+    () => (byDay[selKey] || []).filter((it) => it.time),
+    [byDay, selKey]
+  );
 
   const responsibleNames = React.useMemo(() => {
     const set = new Set();
@@ -376,6 +384,19 @@ export default function CalendarPage() {
 
   async function persistMove(it, time, dayKey) {
     await persistSchedule(it, time, dayKey);
+  }
+
+  async function scheduleNextFree(it, time) {
+    if (!time) {
+      toast({
+        title: "No free slot",
+        description: "Nothing fits between 6am and 10pm on this day.",
+        variant: "destructive",
+      });
+      return;
+    }
+    await persistSchedule(it, time, selKey);
+    setPoolSelected(null);
   }
 
   async function persistResize(it, minutes) {
@@ -660,9 +681,12 @@ export default function CalendarPage() {
               <UnscheduledPool
                 items={poolItems}
                 allItems={all}
+                scheduled={dayTimedItems}
                 selectedId={poolSelected}
                 onSelect={setPoolSelected}
                 onOpenItem={setActive}
+                onScheduleNextFree={scheduleNextFree}
+                onDraggingChange={setDraggingPoolId}
                 isMobile={false}
               />
               <UnscheduledList items={poolItems.slice(0, 8)} onOpen={setActive} onSchedule={openSchedule} compact />
@@ -733,7 +757,7 @@ export default function CalendarPage() {
                 />
               )}
 
-              <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[1fr_280px]")}>
+              <div className={cn("grid gap-4", "lg:grid-cols-[1fr_280px]")}>
                 <DayGrid
                   day={selected}
                   items={selItems}
@@ -742,24 +766,29 @@ export default function CalendarPage() {
                   poolItems={poolItems}
                   selectedPoolId={poolSelected}
                   onSelectPoolItem={setPoolSelected}
+                  draggingPoolId={draggingPoolId}
+                  onDraggingPoolChange={setDraggingPoolId}
                   onOpenItem={setActive}
                   onSchedule={persistSchedule}
                   onMove={persistMove}
                   onResize={persistResize}
                 />
-                {!isMobile && (
-                  <div className="space-y-3">
-                    <UnscheduledPool
-                      items={poolItems}
-                      allItems={all}
-                      selectedId={poolSelected}
-                      onSelect={setPoolSelected}
-                      onOpenItem={setActive}
-                      isMobile={false}
-                    />
+                <div className="space-y-3">
+                  <UnscheduledPool
+                    items={poolItems}
+                    allItems={all}
+                    scheduled={dayTimedItems}
+                    selectedId={poolSelected}
+                    onSelect={setPoolSelected}
+                    onOpenItem={setActive}
+                    onScheduleNextFree={scheduleNextFree}
+                    onDraggingChange={setDraggingPoolId}
+                    isMobile={isMobile}
+                  />
+                  {!isMobile && (
                     <UnscheduledList items={poolItems.slice(0, 8)} onOpen={setActive} onSchedule={openSchedule} compact />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </>
           )}
